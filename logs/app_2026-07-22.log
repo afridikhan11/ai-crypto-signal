@@ -11659,3 +11659,4 @@
 2026-07-22 20:59:18.140 | SUCCESS  | app.scheduler.scanner:start:37 - Initial market scan completed.
 2026-07-22 20:59:18.141 | INFO     | app.scheduler.scanner:start:45 - Crypto scanner started.
 2026-07-22 20:59:18.142 | INFO     | app.services.binance_service:start_websocket:191 - Connecting to Binance WebSocket: 250 streams
+2026-07-22 20:59:19.032 | INFO     | app.services.binance_service:start_websocket:198 - WebSocket connected successfully.
