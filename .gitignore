@@ -1,5 +1,20 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-logs/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Environment
 .env
+
+# Logs
+logs/
+FastAPI Backend/logs/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
