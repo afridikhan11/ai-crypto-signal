@@ -1,0 +1,14 @@
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="{StaticResource PrimaryBackgroundBrush}">
+
+        <TextBlock
+            Text="Dashboard"
+            Style="{StaticResource Heading1Text}"
+            Margin="30"/>
+
+    </Grid>
+
+</UserControl>
