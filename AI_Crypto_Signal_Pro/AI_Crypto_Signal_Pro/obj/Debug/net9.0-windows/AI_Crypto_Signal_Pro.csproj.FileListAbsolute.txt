@@ -68,3 +68,5 @@ D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\obj\Debug\
 D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\obj\Debug\net9.0-windows\App.baml
 D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\obj\Debug\net9.0-windows\Views\DashboardView.baml
 D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\obj\Debug\net9.0-windows\Views\DashboardView.g.cs
+D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\obj\Debug\net9.0-windows\Views\LiveSignalsView.baml
+D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\obj\Debug\net9.0-windows\Views\LiveSignalsView.g.cs

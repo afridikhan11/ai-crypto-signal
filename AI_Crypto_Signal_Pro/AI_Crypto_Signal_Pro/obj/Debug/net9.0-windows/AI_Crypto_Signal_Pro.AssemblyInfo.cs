@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AI_Crypto_Signal_Pro")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+239ac9e859c4d130534c92b7fd33f5d4827e3c1c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cb132acd638f0c8beac31b792514dc1e5ea2219d")]
 [assembly: System.Reflection.AssemblyProductAttribute("AI_Crypto_Signal_Pro")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AI_Crypto_Signal_Pro")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

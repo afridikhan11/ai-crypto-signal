@@ -10,11 +10,11 @@ none
 false
 TRACE;DEBUG;NET;NET9_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NET9_0_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS7_0_OR_GREATER
 D:\Project\ai-crypto-signal\AI_Crypto_Signal_Pro\AI_Crypto_Signal_Pro\App.xaml
-6-401392681
+71617849395
 22519190007
-9-1505841267
+12214895705
 231-953335381
-MainWindow.xaml;Resources\Styles\Colors.xaml;Resources\Styles\Controls.xaml;Resources\Styles\Glassmorphism.xaml;Resources\Styles\Typography.xaml;Views\DashboardView.xaml;
+MainWindow.xaml;Resources\Styles\Colors.xaml;Resources\Styles\Controls.xaml;Resources\Styles\Glassmorphism.xaml;Resources\Styles\Typography.xaml;Views\DashboardView.xaml;Views\LiveSignalsView.xaml;
 
 False
 

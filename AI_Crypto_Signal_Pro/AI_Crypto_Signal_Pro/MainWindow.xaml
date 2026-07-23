@@ -1,59 +1,382 @@
-﻿<Window x:Class="AI_Crypto_Signal_Pro.MainWindow"
+<Window x:Class="AI_Crypto_Signal_Pro.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
         Title="AI Crypto Signal Pro"
         Height="900"
-        Width="1600"
+        Width="1400"
+        MinHeight="700"
+        MinWidth="1100"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource PrimaryBackgroundBrush}">
+        WindowStyle="SingleBorderWindow"
+        Background="Transparent"
+        TextElement.Foreground="{DynamicResource PrimaryTextBrush}">
 
     <Grid>
+        <!-- Custom window chrome + drop shadow -->
+        <Border Background="{DynamicResource PrimaryBackgroundBrush}"
+                CornerRadius="16"
+                BorderBrush="{DynamicResource GlassBorderBrush}"
+                BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="30"
+                                  ShadowDepth="0"
+                                  Opacity="0.6"
+                                  Color="Black" />
+            </Border.Effect>
 
-        <Grid.RowDefinitions>
-            <RowDefinition Height="70"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="32"/>
-        </Grid.RowDefinitions>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="36" />
+                    <!-- Title bar -->
+                    <RowDefinition Height="*" />
+                    <!-- Main area -->
+                    <RowDefinition Height="28" />
+                    <!-- Status bar -->
+                </Grid.RowDefinitions>
 
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="250"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+                <!-- ========== TITLE BAR ========== -->
+                <Grid Grid.Row="0"
+                      Background="{DynamicResource SecondaryBackgroundBrush}"
+                      MouseDown="TitleBar_MouseDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-        <!-- HEADER -->
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="12,0,0,0">
+                        <materialDesign:PackIcon Kind="AlphaA"
+                                                 Width="16"
+                                                 Height="16"
+                                                 Foreground="{DynamicResource AccentBrush}" />
+                        <TextBlock Text="AI Crypto Signal Pro"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Margin="8,0,0,0" />
+                    </StackPanel>
 
-        <Border Grid.ColumnSpan="2"
-                Background="{StaticResource SecondaryBackgroundBrush}">
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="0,0,8,0">
+                        <Button 
+                                Width="36"
+                                Height="28"
+                                ToolTip="Minimize"
+                                Click="MinimizeButton_Click"
+                                Content="{materialDesign:PackIcon Kind=WindowMinimize}" />
+                        <Button 
+                                Width="36"
+                                Height="28"
+                                ToolTip="Maximize"
+                                Click="MaximizeButton_Click"
+                                Content="{materialDesign:PackIcon Kind=WindowMaximize}" />
+                        <Button 
+                                Width="36"
+                                Height="28"
+                                ToolTip="Close"
+                                Click="CloseButton_Click"
+                                Content="{materialDesign:PackIcon Kind=WindowClose}" />
+                    </StackPanel>
+                </Grid>
 
-            <Grid Margin="20,0">
+                <!-- ========== MAIN CONTENT ========== -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="250" />
+                        <ColumnDefinition Width="281*" />
+                        <ColumnDefinition Width="6*"/>
+                    </Grid.ColumnDefinitions>
 
-                <Grid.ColumnDefinitions>
+                    <!-- Sidebar -->
+                    <Border Background="{DynamicResource SecondaryBackgroundBrush}"
+                            Grid.Column="0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                    <ColumnDefinition Width="*"/>
+                            <ListBox x:Name="NavigationListBox"
+                                     Grid.Row="0"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Margin="0,16,0,0"
+                                     SelectedIndex="0">
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="HomeOutline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Dashboard" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ChartLineVariant" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Live Signals" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ChartAreaspline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Statistics" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="History" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="History" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="CogOutline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Settings" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                            </ListBox>
 
-                    <ColumnDefinition Width="Auto"/>
+                            <Border Grid.Row="1"
+                                    Height="44"
+                                    Background="{DynamicResource ElevatedBackgroundBrush}"
+                                    Padding="20,0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <materialDesign:PackIcon Kind="LanConnect" Width="14" Height="14"
+                                                             Foreground="{DynamicResource SuccessBrush}" />
+                                    <TextBlock Text="Binance Connected"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               FontSize="11" Margin="10,0,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
 
-                </Grid.ColumnDefinitions>
+                    <!-- Dashboard Content -->
+                    <ScrollViewer Grid.Column="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Background="{DynamicResource PrimaryBackgroundBrush}"
+                                  Padding="24,20" Grid.ColumnSpan="2">
+                        <StackPanel>
+                            <!-- Statistic Cards -->
+                            <Grid Height="120" Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
 
-                <TextBlock Text="AI Crypto Signal Pro"
-                           VerticalAlignment="Center"
-                           Style="{StaticResource Heading1Text}"/>
+                                <Border CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundBrush}"
+                                        Margin="0,0,10,0"
+                                        Padding="16">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Total Signals"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="12" />
+                                        <TextBlock Text="1,283"
+                                                   FontSize="24"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                                   Margin="0,4,0,0" />
+                                        <TextBlock Text="+12% this month"
+                                                   Foreground="{DynamicResource SuccessBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
 
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
+                                <Border CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundBrush}"
+                                        Margin="0,0,10,0"
+                                        Padding="16">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Win Rate"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="12" />
+                                        <TextBlock Text="78.5%"
+                                                   FontSize="24"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   Margin="0,4,0,0" />
+                                        <TextBlock Text="Last 30 days"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
 
-                    <Button Content="⚙"
-                            Margin="0,0,15,0"/>
+                                <Border CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundBrush}"
+                                        Margin="0,0,10,0"
+                                        Padding="16">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Active Trades"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="12" />
+                                        <TextBlock Text="9"
+                                                   FontSize="24"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource InfoBrush}"
+                                                   Margin="0,4,0,0" />
+                                        <TextBlock Text="Open positions"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
 
-                    <Button Content="👤"/>
+                                <Border CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundBrush}"
+                                        Padding="16">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="AI Confidence"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="12" />
+                                        <TextBlock Text="92"
+                                                   FontSize="24"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   Margin="0,4,0,0" />
+                                        <TextBlock Text="Avg score"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="11"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
 
-                </StackPanel>
+                            <!-- Market Overview Placeholder -->
+                            <Border CornerRadius="10"
+                                    Background="{DynamicResource CardBackgroundBrush}"
+                                    Padding="16"
+                                    Height="200"
+                                    Margin="0,0,0,20">
+                                <StackPanel>
+                                    <TextBlock Text="Market Overview"
+                                               FontWeight="SemiBold"
+                                               FontSize="14"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               Margin="0,0,0,12" />
+                                    <Border Background="{DynamicResource ElevatedBackgroundBrush}"
+                                            CornerRadius="6"
+                                            Height="140">
+                                        <TextBlock Text="Chart Area"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
 
+                            <!-- Recent Signals Table -->
+                            <Border CornerRadius="10"
+                                    Background="{DynamicResource CardBackgroundBrush}"
+                                    Padding="16"
+                                    Height="280">
+                                <StackPanel>
+                                    <TextBlock Text="Recent Signals"
+                                               FontWeight="SemiBold"
+                                               FontSize="14"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               Margin="0,0,0,12" />
+                                    <DataGrid AutoGenerateColumns="False"
+                                              BorderThickness="0"
+                                              Background="Transparent"
+                                              IsReadOnly="True"
+                                              RowHeight="36"
+                                              CanUserAddRows="False"
+                                              HeadersVisibility="Column">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Coin" Binding="{Binding CoinSymbol}"
+                                                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                                                Width="*" />
+                                            <DataGridTextColumn Header="Direction" Binding="{Binding Direction}"
+                                                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                                                Width="*" />
+                                            <DataGridTextColumn Header="Entry" Binding="{Binding EntryPrice}"
+                                                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                                                Width="*" />
+                                            <DataGridTextColumn Header="SL" Binding="{Binding StopLoss}"
+                                                                Foreground="{DynamicResource DangerBrush}"
+                                                                Width="*" />
+                                            <DataGridTextColumn Header="TP1" Binding="{Binding TakeProfit1}"
+                                                                Foreground="{DynamicResource SuccessBrush}"
+                                                                Width="*" />
+                                            <DataGridTextColumn Header="Conf" Binding="{Binding Confidence}"
+                                                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                                                Width="*" />
+                                            <DataGridTextColumn Header="Status" Binding="{Binding Status}"
+                                                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                                                Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- ========== STATUS BAR ========== -->
+                <Border Grid.Row="2"
+                        Background="{DynamicResource SecondaryBackgroundBrush}"
+                        Padding="12,0">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <materialDesign:PackIcon Kind="CheckCircleOutline" Width="12" Height="12"
+                                                     Foreground="{DynamicResource SuccessBrush}" />
+                            <TextBlock Text="Backend Online"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       FontSize="11"
+                                       Margin="8,0,0,0" />
+                            <TextBlock Text="|"
+                                       Foreground="#30363D"
+                                       Margin="12,0" />
+                            <materialDesign:PackIcon Kind="DatabaseOutline" Width="12" Height="12"
+                                                     Foreground="{DynamicResource InfoBrush}" />
+                            <TextBlock Text="DB Connected"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       FontSize="11"
+                                       Margin="8,0,0,0" />
+                            <TextBlock Text="|"
+                                       Foreground="#30363D"
+                                       Margin="12,0" />
+                            <materialDesign:PackIcon Kind="Web" Width="12" Height="12"
+                                                     Foreground="{DynamicResource SuccessBrush}" />
+                            <TextBlock Text="WebSocket Active"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       FontSize="11"
+                                       Margin="8,0,0,0" />
+                        </StackPanel>
+                        <TextBlock HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="11"
+                                   Text="v1.0.0" />
+                    </Grid>
+                </Border>
             </Grid>
-
         </Border>
-
     </Grid>
-
 </Window>
+
+

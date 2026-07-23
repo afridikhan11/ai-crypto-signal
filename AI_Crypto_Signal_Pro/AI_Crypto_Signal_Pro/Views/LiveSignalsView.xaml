@@ -1,0 +1,36 @@
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.LiveSignalsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="{DynamicResource PrimaryBackgroundBrush}" Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Live Signals"
+                   FontSize="30"
+                   FontWeight="Bold"
+                   Margin="0,0,0,20"/>
+
+        <Border Grid.Row="1"
+                Background="{DynamicResource CardBackgroundBrush}"
+                CornerRadius="12"
+                Padding="15">
+
+            <DataGrid AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      IsReadOnly="True">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Coin" Binding="{Binding Coin}" Width="*"/>
+                    <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*"/>
+                    <DataGridTextColumn Header="Entry" Binding="{Binding Entry}" Width="*"/>
+                    <DataGridTextColumn Header="Stop Loss" Binding="{Binding StopLoss}" Width="*"/>
+                    <DataGridTextColumn Header="Take Profit" Binding="{Binding TakeProfit}" Width="*"/>
+                    <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="*"/>
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+        </Border>
+    </Grid>
+</UserControl>
