@@ -17,9 +17,13 @@
                 CornerRadius="12"
                 Padding="15">
 
-            <DataGrid AutoGenerateColumns="False"
+            <DataGrid ItemsSource="{Binding Signals}"
+                      AutoGenerateColumns="False"
                       CanUserAddRows="False"
-                      IsReadOnly="True">
+                      IsReadOnly="True"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal">
+                      
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Coin" Binding="{Binding Coin}" Width="*"/>
                     <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*"/>

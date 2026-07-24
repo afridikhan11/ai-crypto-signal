@@ -1,0 +1,159 @@
+﻿<!-- StatisticsView.xaml -->
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.StatisticsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}"
+             TextElement.FontFamily="{DynamicResource MaterialDesignFont}">
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Margin="0,0,0,20">
+            <TextBlock Text="Statistics" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock Text="Performance analytics and insights"
+                       FontSize="12"
+                       Foreground="{DynamicResource SecondaryTextBrush}"
+                       Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!-- Content -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Stat Cards Row 1 -->
+            <UniformGrid Grid.Row="0" Columns="3" Height="100" Margin="0,0,0,12">
+                <Border CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Margin="0,0,10,0"
+                        Padding="16">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Total Signals"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding TotalSignals}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Margin="0,0,10,0"
+                        Padding="16">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Active Signals"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding ActiveSignals}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="{DynamicResource InfoBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Padding="16">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Closed Signals"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding ClosedSignals}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Stat Cards Row 2 -->
+            <UniformGrid Grid.Row="1" Columns="3" Height="100" Margin="0,0,0,12">
+                <Border CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Margin="0,0,10,0"
+                        Padding="16">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Win Rate"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding WinRate, StringFormat={}{0:F1}%}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Margin="0,0,10,0"
+                        Padding="16">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Avg Confidence"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding AvgConfidence, StringFormat={}{0:F0}}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border CornerRadius="10"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        Padding="16">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Avg Risk Reward"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding AvgRiskReward, StringFormat={}{0:F2}}"
+                                   FontSize="24" FontWeight="Bold"
+                                   Foreground="{DynamicResource SuccessBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Best Performing Symbol Card -->
+            <Border Grid.Row="2"
+                    CornerRadius="10"
+                    Background="{DynamicResource CardBackgroundBrush}"
+                    Padding="16" MinHeight="80" Margin="0,0,0,12">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Best Performing Symbol"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               FontSize="12" />
+                    <TextBlock Text="{Binding BestPerformingSymbol}"
+                               FontSize="20" FontWeight="Bold"
+                               Foreground="{DynamicResource AccentBrush}"
+                               Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- Chart Placeholder -->
+            <Border Grid.Row="3" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="16" Margin="0,12,0,0" VerticalAlignment="Stretch">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <materialDesign:PackIcon Kind="ChartBar"
+                                             Width="32" Height="32"
+                                             Foreground="{DynamicResource SecondaryTextBrush}" />
+                    <TextBlock Text="Chart Area"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               FontSize="13" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
+
+
+

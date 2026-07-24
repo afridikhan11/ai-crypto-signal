@@ -1,20 +1,51 @@
-# Python
+# =========================
+# Python Backend
+# =========================
 __pycache__/
 *.py[cod]
-
-# Virtual environment
 .venv/
-
-# Environment
 .env
-
-# Logs
 logs/
 FastAPI Backend/logs/
 
-# VS Code
+# =========================
+# Visual Studio / WPF
+# =========================
+.vs/
 .vscode/
+bin/
+obj/
+TestResults/
 
-# OS
-.DS_Store
+# Visual Studio User Files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Cache
+*.VC.db
+*.VC.opendb
+*.opendb
+
+# Copilot Cache
+CopilotIndices/
+CodeChunks.db
+SemanticSymbols.db
+*.db-shm
+*.db-wal
+*.vsidx
+*.dtbcache.v2
+
+# NuGet
+packages/
+
+# Rider
+.idea/
+
+# Windows
 Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store

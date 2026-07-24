@@ -2,6 +2,10 @@ namespace AI_Crypto_Signal_Pro.Models;
 
 public class SignalModel
 {
+    public Guid Id { get; set; }
+
+    public Guid CoinId { get; set; }
+
     public string Coin { get; set; } = string.Empty;
 
     public string Direction { get; set; } = string.Empty;
@@ -12,7 +16,25 @@ public class SignalModel
 
     public decimal TakeProfit { get; set; }
 
+    public decimal TakeProfit2 { get; set; }
+
+    public decimal TakeProfit3 { get; set; }
+
+    public decimal RiskReward { get; set; }
+
     public int Confidence { get; set; }
 
-    public string Status { get; set; } = "Waiting";
+    public string Reason { get; set; } = string.Empty;
+
+    public string Status { get; set; } = string.Empty;
+
+    public string Timeframe { get; set; } = string.Empty;
+
+    public string? AiModelVersion { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
+    public DateTime? ClosedAt { get; set; }
 }

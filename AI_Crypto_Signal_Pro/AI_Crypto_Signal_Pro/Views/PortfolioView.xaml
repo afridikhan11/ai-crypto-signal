@@ -1,0 +1,82 @@
+<!-- ========== Views/PortfolioView.xaml ========== -->
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.PortfolioView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}"
+             TextElement.FontFamily="{DynamicResource MaterialDesignFont}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20">
+        <StackPanel>
+            <StackPanel Margin="0,0,0,16">
+                <TextBlock Text="Portfolio" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock Text="Track your assets and performance" FontSize="12"
+                           Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <Grid Height="140" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" CornerRadius="12" Background="{DynamicResource CardBackgroundBrush}" Margin="0,0,10,0" Padding="20">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Total Balance" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" />
+                        <TextBlock Text="$48,320.50" FontSize="28" FontWeight="Bold" Margin="0,6,0,0" />
+                        <TextBlock Text="+$1,250.00 (+2.6%)" Foreground="{DynamicResource SuccessBrush}" FontSize="13" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" CornerRadius="12" Background="{DynamicResource CardBackgroundBrush}" Margin="0,0,10,0" Padding="20">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Today's PnL" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" />
+                        <TextBlock Text="+$450.20" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource SuccessBrush}" Margin="0,6,0,0" />
+                        <TextBlock Text="Weekly: +$1,200.00" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="13" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" CornerRadius="12" Background="{DynamicResource CardBackgroundBrush}" Padding="20">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Open Positions" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" />
+                        <TextBlock Text="9" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource InfoBrush}" Margin="0,6,0,0" />
+                        <TextBlock Text="Risk: 2.5%" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="13" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid Height="200" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="16" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="Equity Curve" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12" />
+                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" CornerRadius="6" Height="140">
+                            <TextBlock Text="Chart coming soon" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="Asset Allocation" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12" />
+                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" CornerRadius="6" Height="140">
+                            <TextBlock Text="Pie chart coming soon" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="16" Height="150">
+                <StackPanel>
+                    <TextBlock Text="Risk Exposure" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12" />
+                    <StackPanel Orientation="Horizontal" Height="80">
+                        <ProgressBar Value="30" Width="20" Height="80" Margin="20,0" Background="Transparent" Foreground="{DynamicResource DangerBrush}" />
+                        <ProgressBar Value="50" Width="20" Height="80" Margin="20,0" Background="Transparent" Foreground="{DynamicResource WarningBrush}" />
+                        <ProgressBar Value="20" Width="20" Height="80" Margin="20,0" Background="Transparent" Foreground="{DynamicResource AccentBrush}" />
+                    </StackPanel>
+                    <TextBlock Text="BTC 30%  |  ETH 50%  |  Other 20%" FontSize="12" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -22,7 +22,6 @@
     <SolidColorBrush x:Key="ElevatedBackgroundBrush"
                      Color="{StaticResource ElevatedBackgroundColor}" />
 
-
     <!-- ========================= -->
     <!-- Accent                    -->
     <!-- ========================= -->
@@ -36,7 +35,6 @@
     <SolidColorBrush x:Key="AccentHoverBrush"
                      Color="{StaticResource AccentHoverColor}" />
 
-
     <!-- ========================= -->
     <!-- Status                    -->
     <!-- ========================= -->
@@ -45,7 +43,6 @@
     <SolidColorBrush x:Key="DangerBrush" Color="#FF5252"/>
     <SolidColorBrush x:Key="WarningBrush" Color="#FFC107"/>
     <SolidColorBrush x:Key="InfoBrush" Color="#29B6F6"/>
-
 
     <!-- ========================= -->
     <!-- Text                      -->
@@ -60,17 +57,18 @@
     <SolidColorBrush x:Key="DisabledTextBrush"
                      Color="#5A5F66"/>
 
-
     <!-- ========================= -->
     <!-- Borders                   -->
     <!-- ========================= -->
+
+    <SolidColorBrush x:Key="BorderBrush"
+                     Color="#30363D"/>
 
     <SolidColorBrush x:Key="CardBorderBrush"
                      Color="#30363D"/>
 
     <SolidColorBrush x:Key="DividerLineBrush"
                      Color="#2B3138"/>
-
 
     <!-- ========================= -->
     <!-- Glassmorphism             -->
@@ -81,7 +79,6 @@
 
     <SolidColorBrush x:Key="GlassBorderBrush"
                      Color="#25FFFFFF"/>
-
 
     <!-- ========================= -->
     <!-- Shadows                   -->
