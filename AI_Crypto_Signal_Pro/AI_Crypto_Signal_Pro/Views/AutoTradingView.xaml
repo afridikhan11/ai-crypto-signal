@@ -1,0 +1,283 @@
+<!-- ========== Views/AutoTradingView.xaml ==========
+     The ONLY screen in this app with a control that can place a real
+     order (the per-signal Execute button). Balance/positions are the same
+     read-only GET /account/snapshot data the Account tab shows - see
+     AutoTradingViewModel's header comment. -->
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.AutoTradingView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}"
+             TextElement.FontFamily="{DynamicResource MaterialDesignFont}">
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Auto Trading" FontSize="22" FontWeight="SemiBold" />
+                    <Border CornerRadius="6" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center"
+                            Background="{Binding Environment, Converter={StaticResource EnvironmentToBrushConverter}}">
+                        <TextBlock Text="{Binding Environment}" FontSize="11" FontWeight="Bold"
+                                   Foreground="Black" />
+                    </Border>
+                </StackPanel>
+                <TextBlock FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0">
+                    <Run Text="Executing a signal here places a REAL order on Binance in the environment shown above." />
+                </TextBlock>
+                <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                           Foreground="{DynamicResource SuccessBrush}" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding ErrorMessage}" FontSize="12"
+                           Foreground="#FF5252" Margin="0,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Button Grid.Column="1" Content="Refresh"
+                    Style="{StaticResource PrimaryButton}"
+                    Command="{Binding RefreshCommand}"
+                    VerticalAlignment="Top" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+
+                <!-- ===== Balance cards (Binance-style) ===== -->
+                <UniformGrid Columns="4" Height="100" Margin="0,0,0,16">
+                    <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                            Margin="0,0,10,0" Padding="16">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Wallet Balance" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding Futures.WalletBalance, StringFormat='{}{0:N2} USDT'}"
+                                       FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                            Margin="0,0,10,0" Padding="16">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Available Balance" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding Futures.AvailableBalance, StringFormat='{}{0:N2} USDT'}"
+                                       FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                            Margin="0,0,10,0" Padding="16">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Unrealized PnL" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding Futures.UnrealizedPnl, StringFormat='{}{0:N2} USDT'}"
+                                       FontSize="22" FontWeight="Bold" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource AccentBrush}" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                            Padding="16">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Margin Balance" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding Futures.MarginBalance, StringFormat='{}{0:N2} USDT'}"
+                                       FontSize="22" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <!-- ===== Executable Signals ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                        Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <materialDesign:PackIcon Kind="FlashOutline" Width="18" Height="18"
+                                                     Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="Active Signals" FontSize="15" FontWeight="SemiBold"
+                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                            <TextBlock Text="(Execute places a MARKET entry + Stop-Loss + TP1 bracket on Binance)"
+                                       FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="10,2,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <DataGrid ItemsSource="{Binding ExecutableSignals}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                  BorderThickness="0" Background="Transparent" RowHeight="56"
+                                  HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Coin" Binding="{Binding Coin}" Width="*" />
+                                <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*" />
+                                <DataGridTextColumn Header="Entry" Binding="{Binding Entry}" Width="*" />
+                                <DataGridTextColumn Header="Stop Loss" Binding="{Binding StopLoss}" Width="*" />
+                                <DataGridTextColumn Header="Take Profit" Binding="{Binding TakeProfit}" Width="*" />
+                                <DataGridTextColumn Header="Suggested Qty" Binding="{Binding PositionSizeDisplay}" Width="1.3*" />
+                                <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="*" />
+                                <DataGridTemplateColumn Header="Action" Width="1.2*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <!-- Explicit Height/Padding (smaller than the row) plus a plain
+                                                 white TextBlock for the label - the previous version relied on
+                                                 Button.Content string + a 42px-tall PrimaryButton inside a 40px
+                                                 row, which clipped the text out of view entirely. -->
+                                            <Button Height="34" Padding="14,0" MinWidth="80"
+                                                    Margin="4"
+                                                    HorizontalContentAlignment="Center"
+                                                    VerticalContentAlignment="Center"
+                                                    IsEnabled="{Binding Executed, Converter={StaticResource InverseBooleanConverter}}"
+                                                    Style="{StaticResource PrimaryButton}"
+                                                    Command="{Binding DataContext.ExecuteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <TextBlock Text="{Binding ExecuteButtonLabel}"
+                                                           Foreground="White" FontSize="12" FontWeight="SemiBold" />
+                                            </Button>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Binance-style tab strip: Positions / Open Orders / Order History / Trade History / Transaction History / Assets ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                        Padding="0" Margin="0,0,0,16">
+                    <TabControl Background="Transparent" BorderThickness="0" Padding="0">
+
+                        <TabItem Header="Positions">
+                            <DataGrid ItemsSource="{Binding OpenPositions}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="52"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Size" Binding="{Binding PositionAmt, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Entry Price" Binding="{Binding EntryPrice, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Break Even" Binding="{Binding BreakEvenPrice, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Mark Price" Binding="{Binding MarkPrice, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Liq. Price" Binding="{Binding LiquidationPrice, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Margin" Binding="{Binding Margin, StringFormat=N2}" Width="*" />
+                                    <DataGridTextColumn Header="PNL" Binding="{Binding UnrealizedPnl, StringFormat=N2}" Width="*" />
+                                    <DataGridTextColumn Header="ROI %" Binding="{Binding RoiPercent, StringFormat=N2}" Width="*" />
+                                    <DataGridTextColumn Header="Leverage" Binding="{Binding Leverage, StringFormat={}{0}x}" Width="0.8*" />
+                                    <DataGridTemplateColumn Header="Action" Width="0.9*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Height="34" Padding="14,0" MinWidth="76"
+                                                        Margin="4"
+                                                        HorizontalContentAlignment="Center"
+                                                        VerticalContentAlignment="Center"
+                                                        Background="#FF5252"
+                                                        BorderThickness="0"
+                                                        Cursor="Hand"
+                                                        Command="{Binding DataContext.ClosePositionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <TextBlock Text="Close" Foreground="White" FontSize="12" FontWeight="SemiBold" />
+                                                </Button>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="Open Orders">
+                            <DataGrid ItemsSource="{Binding OpenOrders}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="36"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Side" Binding="{Binding Side}" Width="*" />
+                                    <DataGridTextColumn Header="Price" Binding="{Binding Price, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Qty" Binding="{Binding Quantity, StringFormat=N6}" Width="*" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="Order History">
+                            <DataGrid ItemsSource="{Binding OrderHistory}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="36"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Side" Binding="{Binding Side}" Width="*" />
+                                    <DataGridTextColumn Header="Type" Binding="{Binding OrderType}" Width="*" />
+                                    <DataGridTextColumn Header="Price" Binding="{Binding Price, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Avg Price" Binding="{Binding AvgPrice, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Qty" Binding="{Binding OrigQty, StringFormat=N6}" Width="*" />
+                                    <DataGridTextColumn Header="Filled" Binding="{Binding ExecutedQty, StringFormat=N6}" Width="*" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                                    <DataGridTextColumn Header="Time" Width="1.2*">
+                                        <DataGridTextColumn.Binding>
+                                            <Binding Path="Time" Converter="{StaticResource UnixTimeToStringConverter}" />
+                                        </DataGridTextColumn.Binding>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="Trade History">
+                            <DataGrid ItemsSource="{Binding TradeHistory}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="36"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Side" Binding="{Binding Side}" Width="*" />
+                                    <DataGridTextColumn Header="Qty" Binding="{Binding Quantity, StringFormat=N6}" Width="*" />
+                                    <DataGridTextColumn Header="Entry Price" Binding="{Binding EntryPrice, StringFormat=N4}" Width="*" />
+                                    <DataGridTextColumn Header="Realized PnL" Binding="{Binding RealizedPnl, StringFormat=N2}" Width="*" />
+                                    <DataGridTextColumn Header="Commission" Binding="{Binding Commission, StringFormat=N6}" Width="*" />
+                                    <DataGridTextColumn Header="Time" Width="1.2*">
+                                        <DataGridTextColumn.Binding>
+                                            <Binding Path="Time" Converter="{StaticResource UnixTimeToStringConverter}" />
+                                        </DataGridTextColumn.Binding>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="Transaction History">
+                            <DataGrid ItemsSource="{Binding IncomeHistory}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="36"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Type" Binding="{Binding IncomeType}" Width="*" />
+                                    <DataGridTextColumn Header="Amount" Binding="{Binding Income, StringFormat=N6}" Width="*" />
+                                    <DataGridTextColumn Header="Asset" Binding="{Binding Asset}" Width="*" />
+                                    <DataGridTextColumn Header="Time" Width="1.2*">
+                                        <DataGridTextColumn.Binding>
+                                            <Binding Path="Time" Converter="{StaticResource UnixTimeToStringConverter}" />
+                                        </DataGridTextColumn.Binding>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="Assets">
+                            <DataGrid ItemsSource="{Binding Balances}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="36"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Asset" Binding="{Binding Asset}" Width="*" />
+                                    <DataGridTextColumn Header="Available" Binding="{Binding Free, StringFormat=N8}" Width="*" />
+                                    <DataGridTextColumn Header="Locked" Binding="{Binding Locked, StringFormat=N8}" Width="*" />
+                                    <DataGridTextColumn Header="Total" Binding="{Binding Total, StringFormat=N8}" Width="*" />
+                                    <DataGridTextColumn Header="Value (USDT)" Binding="{Binding ValueUsdt, StringFormat=N2}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                    </TabControl>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

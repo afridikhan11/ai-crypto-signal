@@ -1,0 +1,863 @@
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.TokenScannerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}">
+
+    <UserControl.Resources>
+        <Style x:Key="SectionCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18" />
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="MetricLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+        </Style>
+        <Style x:Key="MetricValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ========== HEADER ========== -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+            <materialDesign:PackIcon Kind="MagnifyScan" Width="26" Height="26"
+                                     Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="Token Scanner" FontSize="28" FontWeight="Bold" Margin="10,0,0,0" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- ========== SEARCH BY SYMBOL/NAME ========== -->
+        <Border Grid.Row="1" Style="{StaticResource SectionCard}">
+            <StackPanel>
+                <TextBlock Text="Or Find a Token by Symbol / Name" Style="{StaticResource SectionTitle}" />
+                <TextBlock Style="{StaticResource MetricLabel}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,14"
+                           Text="A ticker alone is ambiguous - many unrelated tokens across different chains share the same symbol. Search shows every distinct contract found (most liquid first, restricted to supported chains) so you can pick the right one before scanning." />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                             materialDesign:HintAssist.Hint="Symbol or name (e.g. PEPE)"
+                             Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Return" Command="{Binding SearchCommand}" />
+                        </TextBox.InputBindings>
+                    </TextBox>
+
+                    <Button Grid.Column="2"
+                            Style="{StaticResource PrimaryButton}"
+                            Content="Search"
+                            Command="{Binding SearchCommand}"
+                            IsEnabled="{Binding IsSearching, Converter={StaticResource InverseBooleanConverter}}"
+                            Padding="24,10" />
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0"
+                            Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ProgressBar IsIndeterminate="True" Width="120" Height="4" VerticalAlignment="Center" />
+                    <TextBlock Text="Searching DexScreener..."
+                               Style="{StaticResource MetricLabel}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <TextBlock Margin="0,10,0,0" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"
+                           Text="{Binding SearchErrorMessage}"
+                           Visibility="{Binding SearchErrorMessage, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+
+                <ItemsControl Margin="0,10,0,0"
+                              ItemsSource="{Binding SearchResults}"
+                              Visibility="{Binding HasSearchResults, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{DynamicResource ElevatedBackgroundBrush}"
+                                    CornerRadius="8" Padding="12,10" Margin="0,0,0,6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock FontWeight="SemiBold">
+                                            <Run Text="{Binding Symbol, Mode=OneWay}" />
+                                            <Run Text=" - " Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <Run Text="{Binding Name, Mode=OneWay}" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        </TextBlock>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}">
+                                            <Run Text="{Binding Chain, Mode=OneWay}" />
+                                            <Run Text=" / " />
+                                            <Run Text="{Binding DexId, Mode=OneWay}" />
+                                            <Run Text=" - " />
+                                            <Run Text="{Binding TokenAddress, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="10,0"
+                                               Text="{Binding LiquidityUsd, StringFormat='Liquidity: {0:C0}'}" FontSize="12" />
+
+                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="10,0"
+                                               Text="{Binding PriceUsd, StringFormat='$ {0:N8}'}" FontSize="12" />
+
+                                    <Button Grid.Column="4"
+                                            Content="Use"
+                                            Padding="16,6"
+                                            Command="{Binding DataContext.SelectSearchResultCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <!-- ========== SCAN FORM ========== -->
+        <Border Grid.Row="2" Style="{StaticResource SectionCard}">
+            <StackPanel>
+                <TextBlock Text="Scan a Token or Trading Pair" Style="{StaticResource SectionTitle}" />
+                <TextBlock Style="{StaticResource MetricLabel}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,14"
+                           Text="Type a contract address for on-chain analysis (DexScreener, GeckoTerminal, GoPlus), or a Binance trading pair like BTCUSDT for Spot/Futures market analysis (the same SMC engine and AI Scorer used by this app's live signals) - the input is detected automatically, no need to pick which scanner to use. Whale/smart-money/social-sentiment sections require paid APIs this app doesn't have and are reported as Not Available, never guessed." />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <ComboBox Grid.Column="0"
+                              Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                              materialDesign:HintAssist.Hint="Chain (ignored for trading pairs)"
+                              ItemsSource="{Binding SupportedChains}"
+                              SelectedItem="{Binding SelectedChain}" />
+
+                    <TextBox Grid.Column="2"
+                             Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                             materialDesign:HintAssist.Hint="Contract address, or trading pair e.g. BTCUSDT"
+                             Text="{Binding TokenAddress, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <Button Grid.Column="4"
+                            Style="{StaticResource PrimaryButton}"
+                            Content="Scan"
+                            Command="{Binding ScanCommand}"
+                            IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBooleanConverter}}"
+                            Padding="24,10" />
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ProgressBar IsIndeterminate="True" Width="120" Height="4" VerticalAlignment="Center" />
+                    <TextBlock Text="Scanning..."
+                               Style="{StaticResource MetricLabel}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ========== ERROR BANNER ========== -->
+        <Border Grid.Row="3" Style="{StaticResource SectionCard}"
+                BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1"
+                Visibility="{Binding ErrorMessage, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}">
+            <StackPanel Orientation="Horizontal">
+                <materialDesign:PackIcon Kind="AlertCircleOutline" Width="18" Height="18"
+                                         Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource DangerBrush}"
+                           Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- ========== RESULTS ========== -->
+        <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding HasReport, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel>
+
+                <!-- Summary -->
+                <Border Style="{StaticResource SectionCard}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Report.TokenAddress}"
+                                       FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <Border Grid.Column="1" CornerRadius="8" Padding="14,6"
+                                    Background="{DynamicResource ElevatedBackgroundBrush}">
+                                <TextBlock Text="{Binding Report.FinalDecision}" FontWeight="Bold" FontSize="16" />
+                            </Border>
+                        </Grid>
+
+                        <UniformGrid Columns="4" Margin="0,16,0,0">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="SAFETY SCORE" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.SafetyScore, StringFormat='{}{0}/100'}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="CONFIDENCE" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.ConfidencePct, StringFormat='{}{0}%'}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="TREND" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.Trend}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="RISK / REWARD" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.RiskReward}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                        </UniformGrid>
+
+                        <UniformGrid Columns="4" Margin="0,16,0,0">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="LIQUIDITY" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.Liquidity}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="HOLDER DISTRIBUTION" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.HolderDistribution}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="CONTRACT RISK" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.ContractRisk}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="MANIPULATION RISK" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.ManipulationRisk}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Trade Levels -->
+                <Border Style="{StaticResource SectionCard}">
+                    <StackPanel>
+                        <TextBlock Text="Suggested Trade Levels" Style="{StaticResource SectionTitle}" />
+                        <UniformGrid Columns="5">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="BEST ENTRY" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.BestEntry, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="STOP LOSS" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.StopLoss, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" Foreground="{DynamicResource DangerBrush}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="TAKE PROFIT 1" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.TakeProfit1, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" Foreground="{DynamicResource SuccessBrush}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="TAKE PROFIT 2" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.TakeProfit2, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" Foreground="{DynamicResource SuccessBrush}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="TAKE PROFIT 3" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.TakeProfit3, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" Foreground="{DynamicResource SuccessBrush}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- DexScreener -->
+                <Border Style="{StaticResource SectionCard}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="ChartLine" Width="18" Height="18" Foreground="{DynamicResource InfoBrush}" />
+                            <TextBlock Text="Market Data (DexScreener)" Style="{StaticResource SectionTitle}" Margin="8,0,0,12" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap"
+                                   Text="{Binding Report.DexScreener.Error}"
+                                   Visibility="{Binding Report.DexScreener.Available, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}" />
+                        <UniformGrid Columns="4" Rows="2"
+                                     Visibility="{Binding Report.DexScreener.Available, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel Margin="0,0,10,10">
+                                <TextBlock Text="PRICE (USD)" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.PriceUsd, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,10">
+                                <TextBlock Text="LIQUIDITY (USD)" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.LiquidityUsd, StringFormat=C0}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,10">
+                                <TextBlock Text="24H VOLUME" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.Volume24hUsd, StringFormat=C0}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,10">
+                                <TextBlock Text="24H CHANGE" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.PriceChange24hPct, StringFormat='{}{0}%'}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="DEX / PAIR" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.DexId}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="BUY/SELL RATIO (24H)" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.BuySellRatio24h, StringFormat=P0}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="PAIR AGE (HOURS)" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.PairAgeHours, StringFormat=N0}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="MOMENTUM" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.DexScreener.Momentum}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Analysis Dashboard - Technical / Smart Money / Security / AI Decision,
+                     combined into one card with tabs (per user request) instead of three
+                     separate stacked cards, so all three analyses are reachable without
+                     scrolling past each other. No dashboard content below was changed -
+                     only moved under a tab. -->
+                <Border Style="{StaticResource SectionCard}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="ChartBoxOutline" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="Analysis Dashboard" Style="{StaticResource SectionTitle}" Margin="8,0,0,12" />
+                        </StackPanel>
+
+                        <TabControl Background="Transparent" BorderThickness="0" Padding="0">
+
+                            <!-- ===== Technical ===== -->
+                            <TabItem Header="Technical">
+                                <StackPanel Margin="0,14,0,0">
+                                    <UniformGrid Columns="4" Rows="2">
+                                        <StackPanel Margin="0,0,10,10">
+                                            <TextBlock Text="TREND" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.Trend}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,10">
+                                            <TextBlock Text="STRUCTURE BREAK" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.LatestStructureBreak}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,10">
+                                            <TextBlock Text="RSI" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.Rsi, StringFormat=N1}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,10">
+                                            <TextBlock Text="ADX" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.Adx, StringFormat=N1}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="MACD BULLISH" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.MacdBullish}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="SUPERTREND BULLISH" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.SupertrendBullish}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="PRICE VS VWAP" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.PriceVsVwap}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="PRICE VS EMA200" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.PriceVsEma200}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                    </UniformGrid>
+
+                                    <!-- Institutional-grade dashboard: BOS/CHoCH, liquidity, order
+                                         blocks, supply/demand, FVG, volatility/volume, multi-timeframe -
+                                         every row below is an ADDITION, the 8 metrics above are unchanged. -->
+                                    <Border Background="{DynamicResource DividerLineBrush}" Height="1" Margin="0,16,0,16" />
+
+                                    <TextBlock Text="INSTITUTIONAL-GRADE DASHBOARD" Style="{StaticResource MetricLabel}"
+                                               FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.3*" />
+                                            <ColumnDefinition Width="1.6*" />
+                                            <ColumnDefinition Width="0.8*" />
+                                            <ColumnDefinition Width="0.8*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="INDICATOR" Style="{StaticResource MetricLabel}" />
+                                        <TextBlock Grid.Column="1" Text="STATUS" Style="{StaticResource MetricLabel}" />
+                                        <TextBlock Grid.Column="2" Text="STRENGTH" Style="{StaticResource MetricLabel}" />
+                                        <TextBlock Grid.Column="3" Text="CONFIDENCE" Style="{StaticResource MetricLabel}" />
+                                    </Grid>
+
+                                    <ItemsControl ItemsSource="{Binding Report.TechnicalAnalysis.Dashboard}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource ElevatedBackgroundBrush}"
+                                                        CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                                                        ToolTip="{Binding Detail}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="1.3*" />
+                                                            <ColumnDefinition Width="1.6*" />
+                                                            <ColumnDefinition Width="0.8*" />
+                                                            <ColumnDefinition Width="0.8*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                                                   FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="12"
+                                                                   VerticalAlignment="Center" TextWrapping="Wrap"
+                                                                   Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Strength, StringFormat='{}{0}/100'}" FontSize="12" />
+                                                            <ProgressBar Value="{Binding Strength}" Maximum="100" Height="4" Margin="0,3,10,0" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Confidence, StringFormat='{}{0}/100'}" FontSize="12" />
+                                                            <ProgressBar Value="{Binding Confidence}" Maximum="100" Height="4" Margin="0,3,10,0" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- AI Technical Summary -->
+                                    <Border Background="{DynamicResource DividerLineBrush}" Height="1" Margin="0,10,0,16" />
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <materialDesign:PackIcon Kind="RobotOutline" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                                        <TextBlock Text="AI Technical Summary" Style="{StaticResource SectionTitle}" Margin="8,0,0,0" />
+                                    </StackPanel>
+
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="TECHNICAL SCORE" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.TechnicalScore, StringFormat='{}{0}/100'}"
+                                                       FontSize="24" FontWeight="Bold" />
+                                        </StackPanel>
+                                        <Border Grid.Column="1" CornerRadius="8" Padding="14,6"
+                                                Background="{DynamicResource ElevatedBackgroundBrush}" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.Verdict}" FontWeight="Bold" FontSize="15" />
+                                        </Border>
+                                    </Grid>
+
+                                    <UniformGrid Columns="3" Margin="0,0,0,12">
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="TREND" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.Trend}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="MOMENTUM" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.Momentum}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="STRUCTURE" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.Structure}" Style="{StaticResource MetricValue}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </UniformGrid>
+
+                                    <UniformGrid Columns="4">
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="BEST ENTRY ZONE" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.BestEntryZone}" Style="{StaticResource MetricValue}" TextWrapping="Wrap" FontSize="13" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="STOP LOSS" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.StopLoss, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" Foreground="{DynamicResource DangerBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="TAKE PROFIT" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.TakeProfit, StringFormat='$ {0:N8}'}" Style="{StaticResource MetricValue}" Foreground="{DynamicResource SuccessBrush}" />
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="RISK / REWARD" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.RiskReward}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </TabItem>
+
+                            <!-- ===== Smart Money ===== -->
+                            <TabItem Header="Smart Money">
+                                <StackPanel Margin="0,14,0,0">
+                                    <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap"
+                                               Text="{Binding Report.SmartMoneyAnalysis.Error}"
+                                               Visibility="{Binding Report.SmartMoneyAnalysis.Available, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}" />
+
+                                    <StackPanel Visibility="{Binding Report.SmartMoneyAnalysis.Available, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+                                        <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap" Margin="0,0,0,14"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="Source: {0}  |  Window: {1}">
+                                                    <Binding Path="Report.SmartMoneyAnalysis.Source" />
+                                                    <Binding Path="Report.SmartMoneyAnalysis.WindowDescription" />
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+
+                                        <!-- Every row below is either backed by real trade-flow data
+                                             (GeckoTerminal on-chain trades / Binance aggregated trades)
+                                             or explicitly marked "Not Available" with a specific reason -
+                                             see app/services/smart_money_service.py. Never fabricated. -->
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.3*" />
+                                                <ColumnDefinition Width="1.6*" />
+                                                <ColumnDefinition Width="0.8*" />
+                                                <ColumnDefinition Width="0.8*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="CATEGORY" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Grid.Column="1" Text="STATUS" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Grid.Column="2" Text="STRENGTH" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Grid.Column="3" Text="CONFIDENCE" Style="{StaticResource MetricLabel}" />
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding Report.SmartMoneyAnalysis.Dashboard}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource ElevatedBackgroundBrush}"
+                                                            CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                                                            ToolTip="{Binding Detail}">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="1.3*" />
+                                                                <ColumnDefinition Width="1.6*" />
+                                                                <ColumnDefinition Width="0.8*" />
+                                                                <ColumnDefinition Width="0.8*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                                                       FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="12"
+                                                                       VerticalAlignment="Center" TextWrapping="Wrap"
+                                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Strength, StringFormat='{}{0}/100'}" FontSize="12" />
+                                                                <ProgressBar Value="{Binding Strength}" Maximum="100" Height="4" Margin="0,3,10,0" />
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Confidence, StringFormat='{}{0}/100'}" FontSize="12" />
+                                                                <ProgressBar Value="{Binding Confidence}" Maximum="100" Height="4" Margin="0,3,10,0" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <!-- AI Smart Money Summary -->
+                                        <Border Background="{DynamicResource DividerLineBrush}" Height="1" Margin="0,10,0,16" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <materialDesign:PackIcon Kind="RobotOutline" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                                            <TextBlock Text="AI Smart Money Summary" Style="{StaticResource SectionTitle}" Margin="8,0,0,0" />
+                                        </StackPanel>
+
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="SMART MONEY SCORE" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.SmartMoneyScore, StringFormat='{}{0}/100'}"
+                                                           FontSize="24" FontWeight="Bold" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" CornerRadius="8" Padding="14,6"
+                                                    Background="{DynamicResource ElevatedBackgroundBrush}" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.Verdict}" FontWeight="Bold" FontSize="15" />
+                                            </Border>
+                                        </Grid>
+
+                                        <UniformGrid Columns="3" Margin="0,0,0,12">
+                                            <StackPanel Margin="0,0,10,0">
+                                                <TextBlock Text="ACTIVITY LEVEL" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.ActivityLevel}" Style="{StaticResource MetricValue}" />
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,10,0">
+                                                <TextBlock Text="NET FLOW BIAS" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.NetFlowBias}" Style="{StaticResource MetricValue}" />
+                                            </StackPanel>
+                                            <StackPanel>
+                                                <TextBlock Text="DATA COVERAGE" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.DataCoveragePct, StringFormat='{}{0}%'}" Style="{StaticResource MetricValue}" />
+                                            </StackPanel>
+                                        </UniformGrid>
+
+                                        <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap" FontStyle="Italic"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="{Binding Report.SmartMoneyAnalysis.AiSummary.Caveat}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </TabItem>
+
+                            <!-- ===== Security ===== -->
+                            <TabItem Header="Security">
+                                <StackPanel Margin="0,14,0,0">
+                                    <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap"
+                                               Text="{Binding Report.ContractSecurityAnalysis.Error}"
+                                               Visibility="{Binding Report.ContractSecurityAnalysis.Available, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}" />
+
+                                    <StackPanel Visibility="{Binding Report.ContractSecurityAnalysis.Available, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+                                        <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap" Margin="0,0,0,14"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="Checked via: {0}">
+                                                    <Binding Path="Report.ContractSecurityAnalysis.SourcesUsed" Converter="{StaticResource StringJoinConverter}" />
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+
+                                        <!-- Every row below is either backed by a real provider
+                                             (GoPlus Security, Honeypot.is, RugCheck) or explicitly
+                                             marked "Not Available" with a specific reason - see
+                                             app/services/contract_security_service.py. Never fabricated. -->
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.3*" />
+                                                <ColumnDefinition Width="1.6*" />
+                                                <ColumnDefinition Width="0.8*" />
+                                                <ColumnDefinition Width="0.8*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="CHECK" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Grid.Column="1" Text="RESULT" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Grid.Column="2" Text="STRENGTH" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Grid.Column="3" Text="CONFIDENCE" Style="{StaticResource MetricLabel}" />
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding Report.ContractSecurityAnalysis.Dashboard}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource ElevatedBackgroundBrush}"
+                                                            CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                                                            ToolTip="{Binding Detail}">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="1.3*" />
+                                                                <ColumnDefinition Width="1.6*" />
+                                                                <ColumnDefinition Width="0.8*" />
+                                                                <ColumnDefinition Width="0.8*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                                                       FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="12"
+                                                                       VerticalAlignment="Center" TextWrapping="Wrap"
+                                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Strength, StringFormat='{}{0}/100'}" FontSize="12" />
+                                                                <ProgressBar Value="{Binding Strength}" Maximum="100" Height="4" Margin="0,3,10,0" />
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Confidence, StringFormat='{}{0}/100'}" FontSize="12" />
+                                                                <ProgressBar Value="{Binding Confidence}" Maximum="100" Height="4" Margin="0,3,10,0" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <!-- AI Security Summary -->
+                                        <Border Background="{DynamicResource DividerLineBrush}" Height="1" Margin="0,10,0,16" />
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <materialDesign:PackIcon Kind="RobotOutline" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                                            <TextBlock Text="AI Security Summary" Style="{StaticResource SectionTitle}" Margin="8,0,0,0" />
+                                        </StackPanel>
+
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="AI SECURITY SCORE" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.ContractSecurityAnalysis.AiSummary.SecurityScore, StringFormat='{}{0}/100'}"
+                                                           FontSize="24" FontWeight="Bold" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" CornerRadius="8" Padding="14,6"
+                                                    Background="{DynamicResource ElevatedBackgroundBrush}" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Report.ContractSecurityAnalysis.AiSummary.Verdict}" FontWeight="Bold" FontSize="15" />
+                                            </Border>
+                                        </Grid>
+
+                                        <StackPanel Margin="0,0,0,12">
+                                            <TextBlock Text="RISK LEVEL" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.ContractSecurityAnalysis.AiSummary.RiskLevel}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+
+                                        <TextBlock Text="KEY CONCERNS" Style="{StaticResource MetricLabel}" Margin="0,0,0,4" />
+                                        <ItemsControl ItemsSource="{Binding Report.ContractSecurityAnalysis.AiSummary.KeyConcerns}" Margin="0,0,0,12">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                        <TextBlock Text="&#8226;" Margin="0,0,8,0" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Style="{StaticResource MetricValue}" FontSize="13" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap" FontStyle="Italic"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="{Binding Report.ContractSecurityAnalysis.AiSummary.Caveat}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </TabItem>
+
+                            <!-- ===== AI Decision ===== -->
+                            <TabItem Header="AI Decision">
+                                <StackPanel Margin="0,14,0,0">
+                                    <Grid Margin="0,0,0,16">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="OVERALL TREND" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.Trend}" Style="{StaticResource MetricValue}" FontSize="18" />
+                                        </StackPanel>
+                                        <Border Grid.Column="1" CornerRadius="8" Padding="14,6"
+                                                Background="{DynamicResource ElevatedBackgroundBrush}" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Report.FinalDecision}" FontWeight="Bold" FontSize="16" />
+                                        </Border>
+                                    </Grid>
+
+                                    <UniformGrid Columns="3" Margin="0,0,0,16">
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="OVERALL CONFIDENCE" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.ConfidencePct, StringFormat='{}{0}%'}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="SAFETY SCORE" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.SafetyScore, StringFormat='{}{0}/100'}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="RISK / REWARD" Style="{StaticResource MetricLabel}" />
+                                            <TextBlock Text="{Binding Report.RiskReward}" Style="{StaticResource MetricValue}" />
+                                        </StackPanel>
+                                    </UniformGrid>
+
+                                    <Border Background="{DynamicResource DividerLineBrush}" Height="1" Margin="0,0,0,16" />
+
+                                    <!-- One score per tab above, side by side, so the user can
+                                         compare Technical/Smart Money/Security at a glance without
+                                         switching tabs. Pulls the SAME AiSummary values already
+                                         shown in each tab - never a separately-computed number. -->
+                                    <TextBlock Text="AI SCORES ACROSS EVERY DASHBOARD" Style="{StaticResource MetricLabel}"
+                                               FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <UniformGrid Columns="3" Margin="0,0,0,16">
+                                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" CornerRadius="8" Padding="12,10" Margin="0,0,8,0">
+                                            <StackPanel>
+                                                <TextBlock Text="TECHNICAL" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.TechnicalScore, StringFormat='{}{0}/100'}" FontSize="20" FontWeight="Bold" />
+                                                <TextBlock Text="{Binding Report.TechnicalAnalysis.AiSummary.Verdict}" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" CornerRadius="8" Padding="12,10" Margin="0,0,8,0">
+                                            <StackPanel>
+                                                <TextBlock Text="SMART MONEY" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.SmartMoneyScore, StringFormat='{}{0}/100'}" FontSize="20" FontWeight="Bold" />
+                                                <TextBlock Text="{Binding Report.SmartMoneyAnalysis.AiSummary.Verdict}" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" CornerRadius="8" Padding="12,10">
+                                            <StackPanel>
+                                                <TextBlock Text="SECURITY" Style="{StaticResource MetricLabel}" />
+                                                <TextBlock Text="{Binding Report.ContractSecurityAnalysis.AiSummary.SecurityScore, StringFormat='{}{0}/100'}" FontSize="20" FontWeight="Bold" />
+                                                <TextBlock Text="{Binding Report.ContractSecurityAnalysis.AiSummary.Verdict}" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                    </UniformGrid>
+
+                                    <Border Background="{DynamicResource DividerLineBrush}" Height="1" Margin="0,0,0,16" />
+
+                                    <TextBlock Text="Why the AI Reached This Decision" Style="{StaticResource SectionTitle}" />
+                                    <ItemsControl ItemsSource="{Binding Report.Reasons}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <materialDesign:PackIcon Kind="CircleSmall" Width="16" Height="16"
+                                                                             Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Top" />
+                                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="6,0,0,0" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </TabItem>
+
+                        </TabControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Sentiment -->
+                <Border Style="{StaticResource SectionCard}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="EmoticonOutline" Width="18" Height="18" Foreground="{DynamicResource InfoBrush}" />
+                            <TextBlock Text="Market Sentiment" Style="{StaticResource SectionTitle}" Margin="8,0,0,12" />
+                        </StackPanel>
+                        <UniformGrid Columns="2">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="FEAR &amp; GREED INDEX" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.Sentiment.FearGreedValue}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="CLASSIFICATION" Style="{StaticResource MetricLabel}" />
+                                <TextBlock Text="{Binding Report.Sentiment.FearGreedClassification}" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Unavailable Data -->
+                <Border Style="{StaticResource SectionCard}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="InformationOutline" Width="18" Height="18" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="Not Available in This Report" Style="{StaticResource SectionTitle}" Margin="8,0,0,12" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource MetricLabel}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                   Text="Whales, Smart Money, holder-cluster maps and social sentiment require paid data providers (Arkham Intelligence, Nansen, Bubblemaps, Twitter/Telegram APIs) this app does not have access to. Rather than guess, these fields are reported honestly below." />
+                        <ItemsControl ItemsSource="{Binding Report.UnavailableData}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="{Binding Field}" FontWeight="SemiBold" Width="140" />
+                                        <TextBlock Text="{Binding Reason}" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

@@ -8,7 +8,15 @@ using AI_Crypto_Signal_Pro.Services;
 
 namespace AI_Crypto_Signal_Pro.ViewModels;
 
-public partial class LiveSignalsViewModel : ObservableObject
+/// <summary>
+/// Same shape as LiveSignalsViewModel, but scoped to Binance's commodity
+/// futures only (XAUUSDT/XAGUSDT/CLUSDT/BZUSDT - Gold, Silver, WTI Crude,
+/// Brent). The backend tags each Coin's asset_class at creation time (see
+/// app.core.constants.asset_class_for_symbol), so filtering here is just
+/// one query param - the SMC scanner/scorer pipeline itself is identical
+/// to crypto, no separate backend concept to duplicate.
+/// </summary>
+public partial class GoldSignalsViewModel : ObservableObject
 {
     private readonly ApiService _apiService = new();
 
@@ -20,14 +28,13 @@ public partial class LiveSignalsViewModel : ObservableObject
 
     public ObservableCollection<SignalModel> Signals { get; } = new();
 
-    public LiveSignalsViewModel()
+    public GoldSignalsViewModel()
     {
         _ = LoadSignalsAsync();
 
-        // Push-driven refresh: the backend broadcasts over /ws/signals whenever
-        // a new signal is saved, so the list updates itself instead of only
-        // refreshing when the user reopens this tab. Call Cleanup() when this
-        // screen is navigated away from to unsubscribe.
+        // Same push-driven refresh as Live Signals: the backend broadcasts on
+        // every new/closed signal regardless of asset class, so just reload
+        // this (already filtered) list on any push.
         WebSocketService.Instance.SignalReceived += OnSignalReceived;
     }
 
@@ -36,7 +43,7 @@ public partial class LiveSignalsViewModel : ObservableObject
         Application.Current?.Dispatcher.InvokeAsync(async () => await LoadSignalsAsync());
     }
 
-    /// <summary>Call this when navigating away from Live Signals so the WebSocket subscription doesn't leak.</summary>
+    /// <summary>Call this when navigating away so the WebSocket subscription doesn't leak.</summary>
     public void Cleanup()
     {
         WebSocketService.Instance.SignalReceived -= OnSignalReceived;
@@ -50,7 +57,7 @@ public partial class LiveSignalsViewModel : ObservableObject
             ErrorMessage = null;
 
             var response =
-                await _apiService.GetAsync<SignalListResponseDto>("signals");
+                await _apiService.GetAsync<SignalListResponseDto>("signals?asset_class=commodity&page_size=100");
 
             Signals.Clear();
 

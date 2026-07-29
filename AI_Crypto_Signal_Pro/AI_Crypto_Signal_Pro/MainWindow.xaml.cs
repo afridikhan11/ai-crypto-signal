@@ -15,6 +15,10 @@ namespace AI_Crypto_Signal_Pro
         {
             InitializeComponent();
 
+            DataContext = new MainWindowViewModel();
+            WebSocketService.Instance.Start();
+            Closed += (_, _) => WebSocketService.Instance.Stop();
+
             _navigation = new NavigationService(MainContent);
 
             ShowDashboard();
@@ -43,14 +47,42 @@ namespace AI_Crypto_Signal_Pro
                     break;
 
                 case 2:
-                    _navigation.Navigate(new StatisticsView());
+                    _navigation.Navigate(new GoldSignalsView());
                     break;
 
                 case 3:
-                    _navigation.Navigate(new HistoryView());
+                    _navigation.Navigate(new StatisticsView());
                     break;
 
                 case 4:
+                    _navigation.Navigate(new HistoryView());
+                    break;
+
+                case 5:
+                    _navigation.Navigate(new AccountView());
+                    break;
+
+                case 6:
+                    _navigation.Navigate(new AutoTradingView());
+                    break;
+
+                case 7:
+                    _navigation.Navigate(new TokenScannerView());
+                    break;
+
+                case 8:
+                    _navigation.Navigate(new AiAssistantView());
+                    break;
+
+                case 9:
+                    _navigation.Navigate(new PortfolioIntelligenceView());
+                    break;
+
+                case 10:
+                    _navigation.Navigate(new AiPerformanceView());
+                    break;
+
+                case 11:
                     _navigation.Navigate(new SettingsView());
                     break;
 

@@ -1,4 +1,5 @@
 ﻿using System.Windows.Controls;
+using AI_Crypto_Signal_Pro.ViewModels;
 
 namespace AI_Crypto_Signal_Pro.Views
 {
@@ -7,6 +8,7 @@ namespace AI_Crypto_Signal_Pro.Views
         public SettingsView()
         {
             InitializeComponent();
+            DataContext = new SettingsViewModel();
         }
     }
 }

@@ -15,6 +15,49 @@
         Background="Transparent"
         TextElement.Foreground="{DynamicResource PrimaryTextBrush}">
 
+    <Window.Resources>
+        <Style x:Key="TitleBarButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CloseButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleBarButtonStyle}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#E81123" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <!-- Custom window chrome + drop shadow -->
         <Border Background="{DynamicResource PrimaryBackgroundBrush}"
@@ -66,19 +109,19 @@
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
                                 Margin="0,0,8,0">
-                        <Button 
+                        <Button Style="{StaticResource TitleBarButtonStyle}"
                                 Width="36"
                                 Height="28"
                                 ToolTip="Minimize"
                                 Click="MinimizeButton_Click"
                                 Content="{materialDesign:PackIcon Kind=WindowMinimize}" />
-                        <Button 
+                        <Button Style="{StaticResource TitleBarButtonStyle}"
                                 Width="36"
                                 Height="28"
                                 ToolTip="Maximize"
                                 Click="MaximizeButton_Click"
                                 Content="{materialDesign:PackIcon Kind=WindowMaximize}" />
-                        <Button 
+                        <Button Style="{StaticResource CloseButtonStyle}"
                                 Width="36"
                                 Height="28"
                                 ToolTip="Close"
@@ -122,7 +165,15 @@
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon Kind="ChartLineVariant" Width="18" Height="18"
                                                                  Foreground="{DynamicResource SecondaryTextBrush}" />
-                                        <TextBlock Text="Live Signals" Foreground="{DynamicResource SecondaryTextBrush}"
+                                        <TextBlock Text="Crypto Signals" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="Diamond" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Gold Signal" Foreground="{DynamicResource SecondaryTextBrush}"
                                                    FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
                                     </StackPanel>
                                 </ListBoxItem>
@@ -144,6 +195,54 @@
                                 </ListBoxItem>
                                 <ListBoxItem Height="44" Padding="20,0">
                                     <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ShieldAccountOutline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Account" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="FlashOutline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Auto Trading" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="MagnifyScan" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Token Scanner" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="RobotOutline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="AI Assistant" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ChartBar" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Portfolio Intelligence" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ChartBoxOutline" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="AI Performance" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon Kind="CogOutline" Width="18" Height="18"
                                                                  Foreground="{DynamicResource SecondaryTextBrush}" />
                                         <TextBlock Text="Settings" Foreground="{DynamicResource SecondaryTextBrush}"
@@ -158,8 +257,8 @@
                                     Padding="20,0">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <materialDesign:PackIcon Kind="LanConnect" Width="14" Height="14"
-                                                             Foreground="{DynamicResource SuccessBrush}" />
-                                    <TextBlock Text="Binance Connected"
+                                                             Foreground="{Binding BinanceStatusColor}" />
+                                    <TextBlock Text="{Binding BinanceStatusText}"
                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                FontSize="11" Margin="10,0,0,0" />
                                 </StackPanel>
@@ -183,8 +282,8 @@
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center">
                             <materialDesign:PackIcon Kind="CheckCircleOutline" Width="12" Height="12"
-                                                     Foreground="{DynamicResource SuccessBrush}" />
-                            <TextBlock Text="Backend Online"
+                                                     Foreground="{Binding BackendStatusColor}" />
+                            <TextBlock Text="{Binding BackendStatusText}"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        FontSize="11"
                                        Margin="8,0,0,0" />
@@ -192,8 +291,8 @@
                                        Foreground="#30363D"
                                        Margin="12,0" />
                             <materialDesign:PackIcon Kind="DatabaseOutline" Width="12" Height="12"
-                                                     Foreground="{DynamicResource InfoBrush}" />
-                            <TextBlock Text="DB Connected"
+                                                     Foreground="{Binding DbStatusColor}" />
+                            <TextBlock Text="{Binding DbStatusText}"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        FontSize="11"
                                        Margin="8,0,0,0" />
@@ -201,8 +300,8 @@
                                        Foreground="#30363D"
                                        Margin="12,0" />
                             <materialDesign:PackIcon Kind="Web" Width="12" Height="12"
-                                                     Foreground="{DynamicResource SuccessBrush}" />
-                            <TextBlock Text="WebSocket Active"
+                                                     Foreground="{Binding WebSocketStatusColor}" />
+                            <TextBlock Text="{Binding WebSocketStatusText}"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        FontSize="11"
                                        Margin="8,0,0,0" />

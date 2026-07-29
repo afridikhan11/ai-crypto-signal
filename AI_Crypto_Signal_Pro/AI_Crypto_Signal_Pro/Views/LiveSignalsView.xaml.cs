@@ -9,6 +9,8 @@ namespace AI_Crypto_Signal_Pro.Views
         {
             InitializeComponent();
             DataContext = new LiveSignalsViewModel();
+
+            Unloaded += (_, _) => (DataContext as LiveSignalsViewModel)?.Cleanup();
         }
     }
 }

@@ -4,9 +4,9 @@ using System.Text.Json.Serialization;
 namespace AI_Crypto_Signal_Pro.Models
 {
     /// <summary>
-    /// Matches FastAPI SignalResponse schema.
+    /// Matches FastAPI HistoryItemResponse schema (app/schemas/history.py).
     /// </summary>
-    public sealed class SignalDto
+    public sealed class HistoryItemDto
     {
         [JsonPropertyName("id")]
         public Guid Id { get; set; }
@@ -38,8 +38,8 @@ namespace AI_Crypto_Signal_Pro.Models
         [JsonPropertyName("reason")]
         public string Reason { get; set; } = string.Empty;
 
-        [JsonPropertyName("status")]
-        public string Status { get; set; } = string.Empty;
+        [JsonPropertyName("result")]
+        public string Result { get; set; } = string.Empty;
 
         [JsonPropertyName("timeframe")]
         public string Timeframe { get; set; } = string.Empty;
@@ -55,32 +55,5 @@ namespace AI_Crypto_Signal_Pro.Models
 
         [JsonPropertyName("closed_at")]
         public DateTime? ClosedAt { get; set; }
-
-        [JsonPropertyName("suggested_risk_usd")]
-        public decimal? SuggestedRiskUsd { get; set; }
-
-        [JsonPropertyName("suggested_quantity")]
-        public decimal? SuggestedQuantity { get; set; }
-
-        [JsonPropertyName("suggested_notional_usd")]
-        public decimal? SuggestedNotionalUsd { get; set; }
-
-        [JsonPropertyName("suggested_profit_usd")]
-        public decimal? SuggestedProfitUsd { get; set; }
-
-        [JsonPropertyName("suggested_loss_sl_usd")]
-        public decimal? SuggestedLossSlUsd { get; set; }
-
-        [JsonPropertyName("executed")]
-        public bool Executed { get; set; }
-
-        [JsonPropertyName("executed_order_id")]
-        public string? ExecutedOrderId { get; set; }
-
-        [JsonPropertyName("executed_at")]
-        public DateTime? ExecutedAt { get; set; }
-
-        [JsonPropertyName("executed_environment")]
-        public string? ExecutedEnvironment { get; set; }
     }
 }

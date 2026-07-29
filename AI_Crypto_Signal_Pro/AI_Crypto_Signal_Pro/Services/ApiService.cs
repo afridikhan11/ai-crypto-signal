@@ -27,7 +27,25 @@ namespace AI_Crypto_Signal_Pro.Services
         public async Task<T?> GetAsync<T>(string endpoint, CancellationToken cancellationToken = default)
         {
             using var response = await _httpClient.GetAsync(endpoint, cancellationToken);
+            return await ReadOrThrowAsync<T>(response, cancellationToken);
+        }
 
+        public async Task<TResponse?> PostAsync<TRequest, TResponse>(
+            string endpoint, TRequest body, CancellationToken cancellationToken = default)
+        {
+            using var response = await _httpClient.PostAsJsonAsync(endpoint, body, _jsonOptions, cancellationToken);
+            return await ReadOrThrowAsync<TResponse>(response, cancellationToken);
+        }
+
+        public async Task<TResponse?> DeleteAsync<TResponse>(
+            string endpoint, CancellationToken cancellationToken = default)
+        {
+            using var response = await _httpClient.DeleteAsync(endpoint, cancellationToken);
+            return await ReadOrThrowAsync<TResponse>(response, cancellationToken);
+        }
+
+        private static async Task<T?> ReadOrThrowAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -42,7 +60,10 @@ namespace AI_Crypto_Signal_Pro.Services
         {
             try
             {
-                using var response = await _httpClient.GetAsync("../health", cancellationToken);
+                // BaseAddress already ends in ".../api/v1/", so "health" resolves to
+                // ".../api/v1/health" (the previous "../health" incorrectly resolved
+                // to ".../api/health" and was never actually called anywhere).
+                using var response = await _httpClient.GetAsync("health", cancellationToken);
                 return response.IsSuccessStatusCode;
             }
             catch

@@ -1,0 +1,198 @@
+<!-- ========== Views/AiPerformanceView.xaml ==========
+     Read-only view over GET /performance/overview and GET /performance/journal
+     (Phase 7, optional date-range filtering added Phase 8). Every figure is a real
+     count/average over already-stored signals - a bucket/breakdown with zero trades
+     shows "Not Available" for its win rate, never a fabricated 0%. -->
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.AiPerformanceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}"
+             TextElement.FontFamily="{DynamicResource MaterialDesignFont}">
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="AI Performance" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0">
+                    Win rate by confidence band, symbol, and asset class, calibration health, and a full trade journal.
+                </TextBlock>
+                <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                           Foreground="{DynamicResource SuccessBrush}" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding ErrorMessage}" FontSize="12"
+                           Foreground="{DynamicResource DangerBrush}" Margin="0,4,0,0"
+                           Visibility="{Binding ErrorMessage, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="0">
+            <TabControl Background="Transparent" BorderThickness="0" Padding="0">
+
+                <!-- ===== Overview tab ===== -->
+                <TabItem Header="Overview">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="16">
+                        <StackPanel>
+
+                            <!-- Date filter -->
+                            <Grid Margin="0,0,0,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="From" VerticalAlignment="Center" Margin="0,0,8,0"
+                                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" />
+                                <DatePicker Grid.Column="1" SelectedDate="{Binding FilterStartDate}" Width="140" Margin="0,0,16,0" />
+                                <TextBlock Grid.Column="2" Text="To" VerticalAlignment="Center" Margin="0,0,8,0"
+                                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" />
+                                <DatePicker Grid.Column="3" SelectedDate="{Binding FilterEndDate}" Width="140" Margin="0,0,16,0" />
+                                <StackPanel Grid.Column="4" Orientation="Horizontal">
+                                    <Button Content="Apply" Style="{StaticResource PrimaryButton}" Command="{Binding RefreshOverviewCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Clear" Style="{StaticResource MaterialDesignFlatButton}" Command="{Binding ClearDateFilterCommand}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock FontSize="11" FontStyle="Italic" Margin="0,0,0,16" Foreground="{DynamicResource SecondaryTextBrush}">
+                                Date filter applies to Confidence Bands / By Symbol / By Asset Class below. Overall Stats and
+                                Calibration Health always reflect full history (calibration readiness is a lifetime measure).
+                            </TextBlock>
+
+                            <!-- Overall stats (existing StatsResponse, unchanged) -->
+                            <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="16" Margin="0,0,0,16">
+                                <UniformGrid Columns="4">
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Total Signals" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="{Binding Overview.Stats.TotalSignals}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Win Rate" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="{Binding Overview.Stats.WinRate, StringFormat=N1}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Avg Confidence" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="{Binding Overview.Stats.AvgConfidence, StringFormat=N1}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="Avg Risk:Reward" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="{Binding Overview.Stats.AvgRiskReward, StringFormat=N2}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </UniformGrid>
+                            </Border>
+
+                            <!-- Confidence buckets -->
+                            <TextBlock Text="Win Rate by Confidence Band" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <DataGrid ItemsSource="{Binding Overview.ConfidenceBuckets}" Margin="0,0,0,16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="34" HeadersVisibility="Column" MaxHeight="220">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Band" Binding="{Binding BucketLabel}" Width="*" />
+                                    <DataGridTextColumn Header="Trades" Binding="{Binding TradeCount}" Width="*" />
+                                    <DataGridTextColumn Header="Wins" Binding="{Binding Wins}" Width="*" />
+                                    <DataGridTextColumn Header="Losses" Binding="{Binding Losses}" Width="*" />
+                                    <DataGridTextColumn Header="Win Rate %" Binding="{Binding WinRatePct, StringFormat=N1, TargetNullValue='Not Available'}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- By symbol -->
+                            <TextBlock Text="Win Rate by Symbol" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <DataGrid ItemsSource="{Binding Overview.BySymbol}" Margin="0,0,0,16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="34" HeadersVisibility="Column" MaxHeight="260">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Trades" Binding="{Binding TradeCount}" Width="*" />
+                                    <DataGridTextColumn Header="Win Rate %" Binding="{Binding WinRatePct, StringFormat=N1, TargetNullValue='Not Available'}" Width="*" />
+                                    <DataGridTextColumn Header="Avg Confidence" Binding="{Binding AvgConfidence, StringFormat=N1, TargetNullValue='-'}" Width="*" />
+                                    <DataGridTextColumn Header="Avg R:R" Binding="{Binding AvgRiskReward, StringFormat=N2, TargetNullValue='-'}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- By asset class -->
+                            <TextBlock Text="Win Rate by Asset Class" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <DataGrid ItemsSource="{Binding Overview.ByAssetClass}" Margin="0,0,0,16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="34" HeadersVisibility="Column" MaxHeight="200">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Asset Class" Binding="{Binding AssetClass}" Width="*" />
+                                    <DataGridTextColumn Header="Trades" Binding="{Binding TradeCount}" Width="*" />
+                                    <DataGridTextColumn Header="Wins" Binding="{Binding Wins}" Width="*" />
+                                    <DataGridTextColumn Header="Losses" Binding="{Binding Losses}" Width="*" />
+                                    <DataGridTextColumn Header="Win Rate %" Binding="{Binding WinRatePct, StringFormat=N1, TargetNullValue='Not Available'}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- Calibration health -->
+                            <TextBlock Text="Calibration Health (always full history)" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <DataGrid ItemsSource="{Binding Overview.CalibrationHealth}" Margin="0,0,0,8"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="34" HeadersVisibility="Column" MaxHeight="220">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Asset Type" Binding="{Binding AssetType}" Width="*" />
+                                    <DataGridTextColumn Header="Wins Collected" Binding="{Binding WinsCollected}" Width="*" />
+                                    <DataGridTextColumn Header="Losses Collected" Binding="{Binding LossesCollected}" Width="*" />
+                                    <DataGridTextColumn Header="Min Required" Binding="{Binding MinRequiredPerGroup}" Width="*" />
+                                    <DataGridTextColumn Header="Calibrated?" Binding="{Binding IsCalibrated}" Width="*" />
+                                    <DataGridTextColumn Header="Ready to Calibrate?" Binding="{Binding ReadyToCalibrate}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ===== Trade Journal tab ===== -->
+                <TabItem Header="Trade Journal">
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding Journal.Entries}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                  BorderThickness="0" Background="Transparent" RowHeight="40" HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*" />
+                                <DataGridTextColumn Header="Outcome" Binding="{Binding Outcome}" Width="*" />
+                                <DataGridTextColumn Header="Entry" Binding="{Binding EntryPrice, StringFormat=N4}" Width="*" />
+                                <DataGridTextColumn Header="Exit" Binding="{Binding ExitPrice, StringFormat=N4, TargetNullValue='-'}" Width="*" />
+                                <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="*" />
+                                <DataGridTextColumn Header="R:R" Binding="{Binding RiskReward, StringFormat=N2}" Width="*" />
+                                <DataGridTextColumn Header="Held (hrs)" Binding="{Binding HeldDurationHours, StringFormat=N1, TargetNullValue='-'}" Width="*" />
+                                <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="2*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Grid Grid.Row="1" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}">
+                                <Run Text="Page " /><Run Text="{Binding JournalPage}" /><Run Text=" of " /><Run Text="{Binding JournalTotalPages}" />
+                                <Run Text="  ·  " /><Run Text="{Binding Journal.Total}" /><Run Text=" total trades" />
+                            </TextBlock>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="Previous" Style="{StaticResource MaterialDesignFlatButton}" Command="{Binding PreviousJournalPageCommand}" Margin="0,0,8,0" />
+                                <Button Content="Next" Style="{StaticResource MaterialDesignFlatButton}" Command="{Binding NextJournalPageCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+            </TabControl>
+        </Border>
+    </Grid>
+</UserControl>

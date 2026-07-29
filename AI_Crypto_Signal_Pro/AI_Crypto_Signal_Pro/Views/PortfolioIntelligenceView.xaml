@@ -1,0 +1,221 @@
+<!-- ========== Views/PortfolioIntelligenceView.xaml ==========
+     Read-only view over GET /portfolio/intelligence (Phase 7). Risk/Daily Loss are the
+     existing Phase 1 summaries; Exposure/Correlation/Diversification are new, built only
+     from real account/signal data - never a second scoring engine. Every section shows
+     the backend's own honest "not available" message when it has one. -->
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.PortfolioIntelligenceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}"
+             TextElement.FontFamily="{DynamicResource MaterialDesignFont}">
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Portfolio Intelligence" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0">
+                    Risk, exposure, correlation, and diversification across your current positions/active signals.
+                </TextBlock>
+                <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                           Foreground="{DynamicResource SuccessBrush}" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding ErrorMessage}" FontSize="12"
+                           Foreground="{DynamicResource DangerBrush}" Margin="0,4,0,0"
+                           Visibility="{Binding ErrorMessage, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+            </StackPanel>
+
+            <Button Grid.Column="1" Content="Refresh" Style="{StaticResource PrimaryButton}"
+                    Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+
+                <!-- ===== Portfolio Risk (existing Phase 1 summary) ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <materialDesign:PackIcon Kind="ShieldAccountOutline" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="Portfolio Risk" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <UniformGrid Columns="4">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Active Signals" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Risk.ActiveSignalCount}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Total Risk (USD)" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Risk.TotalRiskUsd, StringFormat=N2, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="% of Balance" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Risk.TotalRiskPercentOfBalance, StringFormat=N2, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Account Balance" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Risk.AccountBalance, StringFormat=N2, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </UniformGrid>
+                        <TextBlock Text="{Binding Intelligence.Risk.Message}" FontSize="11" FontStyle="Italic" Margin="0,10,0,0"
+                                   Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                   Visibility="{Binding Intelligence.Risk.Message, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Daily Loss (existing Phase 1 summary) ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <materialDesign:PackIcon Kind="ChartLine" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="Daily Loss Tracking" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            <Border CornerRadius="4" Background="{DynamicResource DangerBrush}" Padding="6,2" Margin="10,0,0,0"
+                                    Visibility="{Binding Intelligence.DailyLoss.Breached, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="THRESHOLD BREACHED" FontSize="10" FontWeight="Bold" Foreground="White" />
+                            </Border>
+                        </StackPanel>
+                        <UniformGrid Columns="4">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Realized P&amp;L (USD)" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.DailyLoss.RealizedPnlUsd, StringFormat=N2}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Realized Loss (USD)" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.DailyLoss.RealizedLossUsd, StringFormat=N2}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="% of Balance" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.DailyLoss.LossPercentOfBalance, StringFormat=N2, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Closed Trades Today" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.DailyLoss.ClosedTradeCount}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </UniformGrid>
+                        <TextBlock Text="{Binding Intelligence.DailyLoss.Message}" FontSize="11" FontStyle="Italic" Margin="0,10,0,0"
+                                   Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                   Visibility="{Binding Intelligence.DailyLoss.Message, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Exposure Analysis ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="ChartBar" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                                <TextBlock Text="Exposure Analysis" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center">
+                                <Run Text="Source: " /><Run Text="{Binding Intelligence.Exposure.Source}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </Grid>
+
+                        <TextBlock Text="{Binding Intelligence.Exposure.Message}" FontSize="12" FontStyle="Italic" Margin="0,0,0,10"
+                                   Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                   Visibility="{Binding Intelligence.Exposure.Message, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+
+                        <DataGrid ItemsSource="{Binding Intelligence.Exposure.Items}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                  BorderThickness="0" Background="Transparent" RowHeight="36"
+                                  HeadersVisibility="Column" MaxHeight="280">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*" />
+                                <DataGridTextColumn Header="Weight %" Binding="{Binding WeightPct, StringFormat=N2}" Width="*" />
+                                <DataGridTextColumn Header="Notional (USD)" Binding="{Binding NotionalUsd, StringFormat=N2, TargetNullValue='-'}" Width="*" />
+                                <DataGridTextColumn Header="Risk (USD)" Binding="{Binding RiskUsd, StringFormat=N2, TargetNullValue='-'}" Width="*" />
+                                <DataGridTextColumn Header="Unrealized PnL" Binding="{Binding UnrealizedPnlUsd, StringFormat=N2, TargetNullValue='-'}" Width="*" />
+                                <DataGridTextColumn Header="Current Decision" Binding="{Binding CurrentDecision, TargetNullValue='-'}" Width="*" />
+                                <DataGridTextColumn Header="Confidence" Binding="{Binding CurrentConfidence, TargetNullValue='-'}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Correlation Analysis ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <materialDesign:PackIcon Kind="ChartLineVariant" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="Correlation Analysis" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock Text="Not Available" FontSize="12" FontStyle="Italic" Margin="0,0,0,10"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Visibility="{Binding Intelligence.Correlation.Available, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}" />
+                        <TextBlock Text="{Binding Intelligence.Correlation.Reason}" FontSize="11" FontStyle="Italic" Margin="0,0,0,10"
+                                   Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                   Visibility="{Binding Intelligence.Correlation.Reason, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+
+                        <DataGrid ItemsSource="{Binding Intelligence.Correlation.Pairs}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                  BorderThickness="0" Background="Transparent" RowHeight="36"
+                                  HeadersVisibility="Column" MaxHeight="240"
+                                  Visibility="{Binding Intelligence.Correlation.Available, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Symbol A" Binding="{Binding SymbolA}" Width="*" />
+                                <DataGridTextColumn Header="Symbol B" Binding="{Binding SymbolB}" Width="*" />
+                                <DataGridTextColumn Header="Correlation" Binding="{Binding Correlation, StringFormat=N2}" Width="*" />
+                                <DataGridTextColumn Header="Same Direction" Binding="{Binding SameDirection}" Width="*" />
+                                <DataGridTextColumn Header="Stacked Risk" Binding="{Binding StackedRisk}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Diversification ===== -->
+                <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <materialDesign:PackIcon Kind="ClipboardListOutline" Width="18" Height="18" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="Diversification" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding Intelligence.Diversification.Reason}" FontSize="12" FontStyle="Italic" Margin="0,0,0,10"
+                                   Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                   Visibility="{Binding Intelligence.Diversification.Reason, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+
+                        <UniformGrid Columns="4" Visibility="{Binding Intelligence.Diversification.Available, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="HHI by Symbol" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.HhiBySymbol, StringFormat=N0, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.ConcentrationLabelBySymbol}" FontSize="11" Foreground="{DynamicResource AccentBrush}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="HHI by Asset Class" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.HhiByAssetClass, StringFormat=N0, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.ConcentrationLabelByAssetClass}" FontSize="11" Foreground="{DynamicResource AccentBrush}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Largest Symbol" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.LargestSymbol, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.LargestSymbolWeightPct, StringFormat='{}{0:N1}%'}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Largest Asset Class" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.LargestAssetClass, TargetNullValue='Not Available'}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                                <TextBlock Text="{Binding Intelligence.Diversification.LargestAssetClassWeightPct, StringFormat='{}{0:N1}%'}" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

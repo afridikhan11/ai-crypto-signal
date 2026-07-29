@@ -17,6 +17,8 @@
             <TextBlock Text="Trade History" FontSize="22" FontWeight="SemiBold" />
             <TextBlock Text="Review all executed and closed trades" FontSize="12"
                        Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0" />
+            <TextBlock Text="{Binding ErrorMessage}" FontSize="12" Foreground="#FF5252"
+                       Margin="0,4,0,0" />
         </StackPanel>
 
         <Border Grid.Row="1" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
@@ -76,21 +78,21 @@
                       HeadersVisibility="Column"
                       SelectionUnit="FullRow">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Date" Binding="{Binding Date, StringFormat=yyyy-MM-dd}" Width="120" />
+                    <DataGridTextColumn Header="Date" Binding="{Binding Date, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
                     <DataGridTextColumn Header="Coin" Binding="{Binding Coin}" Width="*" />
                     <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*" />
                     <DataGridTextColumn Header="Entry" Binding="{Binding EntryPrice, StringFormat=N8}" Width="*" />
-                    <DataGridTextColumn Header="Exit" Binding="{Binding ExitPrice, StringFormat=N8}" Width="*" />
-                    <DataGridTextColumn Header="PnL" Binding="{Binding PnL, StringFormat=N2}" Width="*" />
-                    <DataGridTemplateColumn Header="Win/Loss" Width="*">
+                    <DataGridTextColumn Header="Stop Loss" Binding="{Binding StopLoss, StringFormat=N8}" Width="*" />
+                    <DataGridTextColumn Header="TP" Binding="{Binding TakeProfit, StringFormat=N8}" Width="*" />
+                    <DataGridTextColumn Header="Conf" Binding="{Binding Confidence}" Width="Auto" />
+                    <DataGridTemplateColumn Header="Result" Width="*">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding WinLoss}" Foreground="{Binding WinLossColor}"
+                                <TextBlock Text="{Binding ResultLabel}" Foreground="{Binding ResultColor}"
                                            FontWeight="SemiBold" VerticalAlignment="Center" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
