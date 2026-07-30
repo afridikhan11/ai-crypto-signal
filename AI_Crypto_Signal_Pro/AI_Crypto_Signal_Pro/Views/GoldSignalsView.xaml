@@ -27,14 +27,25 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Coin" Binding="{Binding Coin}" Width="*"/>
                     <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*"/>
-                    <DataGridTextColumn Header="Entry" Binding="{Binding Entry}" Width="*"/>
+                    <!-- ICT Pending Limit Entry (2026-07-30): shows whether the entry is
+                         still WAITING for price to reach the ICT zone, is ARMED with a
+                         resting LIMIT order, or has actually FILLED - a bare number
+                         could not distinguish "we plan to enter here" from "we are in". -->
+                    <DataGridTextColumn Header="Entry" Binding="{Binding EntryStateDisplay}" Width="1.6*"/>
                     <DataGridTextColumn Header="Stop Loss" Binding="{Binding StopLoss}" Width="*"/>
                     <DataGridTextColumn Header="Take Profit" Binding="{Binding TakeProfit}" Width="*"/>
                     <DataGridTextColumn Header="Suggested Size" Binding="{Binding PositionSizeDisplay}" Width="1.6*"/>
                     <DataGridTextColumn Header="Potential Profit" Binding="{Binding ProfitDisplay}" Width="1.1*"/>
                     <DataGridTextColumn Header="Potential Loss" Binding="{Binding LossDisplay}" Width="1.1*"/>
                     <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="*"/>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+                    <DataGridTemplateColumn Header="Status" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Status}" FontWeight="SemiBold"
+                                           Foreground="{Binding StatusColor}" VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
 

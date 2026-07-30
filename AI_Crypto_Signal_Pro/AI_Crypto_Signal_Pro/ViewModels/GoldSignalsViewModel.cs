@@ -51,6 +51,9 @@ public partial class GoldSignalsViewModel : ObservableObject
 
     public async Task LoadSignalsAsync()
     {
+        if (IsLoading)
+            return;
+
         try
         {
             IsLoading = true;
@@ -88,7 +91,18 @@ public partial class GoldSignalsViewModel : ObservableObject
                     SuggestedQuantity = s.SuggestedQuantity,
                     SuggestedNotionalUsd = s.SuggestedNotionalUsd,
                     SuggestedProfitUsd = s.SuggestedProfitUsd,
-                    SuggestedLossSlUsd = s.SuggestedLossSlUsd
+                    SuggestedLossSlUsd = s.SuggestedLossSlUsd,
+                    Executed = s.Executed,
+                    ExecutedOrderId = s.ExecutedOrderId,
+                    ExecutedAt = s.ExecutedAt,
+                    ExecutedEnvironment = s.ExecutedEnvironment,
+                    EntryType = s.EntryType,
+                    EntryZoneTop = s.EntryZoneTop,
+                    EntryZoneBottom = s.EntryZoneBottom,
+                    EntryExpiresAt = s.EntryExpiresAt,
+                    FilledAt = s.FilledAt,
+                    ActualFillPrice = s.ActualFillPrice,
+                    EntryOrderId = s.EntryOrderId
                 });
             }
         }

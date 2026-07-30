@@ -22,6 +22,14 @@ namespace AI_Crypto_Signal_Pro.ViewModels
 
         private readonly ApiService _apiService = new();
 
+        // Separate re-entrancy guard from the shared IsLoading flag: the constructor
+        // fires RefreshOverview() and LoadJournalPage() concurrently (fire-and-forget),
+        // and RefreshOverview() sets IsLoading = true synchronously before its first
+        // await. Guarding LoadJournalPage() on the same IsLoading flag meant it saw
+        // IsLoading already true and returned immediately - the Trade Journal tab
+        // never loaded on startup. This flag guards only the journal fetch.
+        private bool _isLoadingJournal;
+
         [ObservableProperty]
         private bool isLoading;
 
@@ -106,9 +114,10 @@ namespace AI_Crypto_Signal_Pro.ViewModels
         [RelayCommand]
         private async Task LoadJournalPage()
         {
-            if (IsLoading)
+            if (_isLoadingJournal)
                 return;
 
+            _isLoadingJournal = true;
             IsLoading = true;
             ErrorMessage = null;
 
@@ -129,6 +138,7 @@ namespace AI_Crypto_Signal_Pro.ViewModels
             finally
             {
                 IsLoading = false;
+                _isLoadingJournal = false;
             }
         }
 

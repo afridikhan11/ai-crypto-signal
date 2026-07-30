@@ -1,0 +1,216 @@
+{
+  "BTCUSDT": {
+    "symbol": "BTCUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3141,
+      "bos_per_100_steps": 54.52,
+      "choch_events": 93,
+      "choch_per_100_steps": 1.61,
+      "ob_formations": 2791,
+      "ob_per_100_steps": 48.45,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3145,
+      "sweep_per_100_steps": 54.59,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1142,
+      "confluence_2of2_per_100_steps": 19.82
+    },
+    "confidence_impact": {
+      "steps_with_break": 3234,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3234,
+      "baseline_confluence_2of2_per_100_steps": 19.82,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 157312.2,
+        "detector_time_us_per_step": 27306.4
+      },
+      "ict": {
+        "new_formations": 555,
+        "new_formations_per_100_steps": 9.63,
+        "present_steps": 3170,
+        "present_per_100_steps": 55.03,
+        "avg_size_pct_of_price": 0.1855,
+        "avg_size_atr_multiple": 0.572,
+        "filled_count": 542,
+        "aged_out_count": 10,
+        "still_open_at_end": 3,
+        "filled_pct_of_lifecycle": 97.7,
+        "unfilled_pct_of_lifecycle": 0.5,
+        "aged_out_pct_of_lifecycle": 1.8,
+        "ob_overlap_count": 78,
+        "ob_overlap_pct_of_new_formations": 14.1,
+        "confluence_3of3_count": 305,
+        "confluence_3of3_per_100_steps": 5.29,
+        "detector_time_ms_total": 275810.3,
+        "detector_time_us_per_step": 47875.4
+      },
+      "wall_time_s": 493.16
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3234,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3234,
+        "min": 41,
+        "max": 71,
+        "mean": 61.12,
+        "median": 62.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3234,
+        "min": 43,
+        "max": 73,
+        "mean": 62.79,
+        "median": 64.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 704.03
+    }
+  },
+  "XAUUSDT": {
+    "symbol": "XAUUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 2995,
+      "bos_per_100_steps": 51.99,
+      "choch_events": 171,
+      "choch_per_100_steps": 2.97,
+      "ob_formations": 2931,
+      "ob_per_100_steps": 50.88,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3166,
+      "sweep_per_100_steps": 54.96,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1243,
+      "confluence_2of2_per_100_steps": 21.58
+    },
+    "confidence_impact": {
+      "steps_with_break": 3166,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3166,
+      "baseline_confluence_2of2_per_100_steps": 21.58,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 171534.3,
+        "detector_time_us_per_step": 29775.1
+      },
+      "ict": {
+        "new_formations": 342,
+        "new_formations_per_100_steps": 5.94,
+        "present_steps": 3073,
+        "present_per_100_steps": 53.34,
+        "avg_size_pct_of_price": 0.1487,
+        "avg_size_atr_multiple": 0.787,
+        "filled_count": 331,
+        "aged_out_count": 10,
+        "still_open_at_end": 1,
+        "filled_pct_of_lifecycle": 96.8,
+        "unfilled_pct_of_lifecycle": 0.3,
+        "aged_out_pct_of_lifecycle": 2.9,
+        "ob_overlap_count": 35,
+        "ob_overlap_pct_of_new_formations": 10.2,
+        "confluence_3of3_count": 107,
+        "confluence_3of3_per_100_steps": 1.86,
+        "detector_time_ms_total": 263049.3,
+        "detector_time_us_per_step": 45660.4
+      },
+      "wall_time_s": 489.81
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3166,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3166,
+        "min": 42,
+        "max": 71,
+        "mean": 61.74,
+        "median": 63.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3166,
+        "min": 44,
+        "max": 73,
+        "mean": 63.43,
+        "median": 64.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 625.1
+    }
+  }
+}

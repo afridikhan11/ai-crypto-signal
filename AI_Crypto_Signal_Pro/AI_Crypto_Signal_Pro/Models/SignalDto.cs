@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace AI_Crypto_Signal_Pro.Models
@@ -71,6 +72,21 @@ namespace AI_Crypto_Signal_Pro.Models
         [JsonPropertyName("suggested_loss_sl_usd")]
         public decimal? SuggestedLossSlUsd { get; set; }
 
+        [JsonPropertyName("correlation_warning")]
+        public string? CorrelationWarning { get; set; }
+
+        [JsonPropertyName("risk_approved")]
+        public bool? RiskApproved { get; set; }
+
+        [JsonPropertyName("risk_reasons")]
+        public List<string> RiskReasons { get; set; } = new();
+
+        [JsonPropertyName("portfolio_open_risk_percent")]
+        public double? PortfolioOpenRiskPercent { get; set; }
+
+        [JsonPropertyName("portfolio_exposure_percent")]
+        public double? PortfolioExposurePercent { get; set; }
+
         [JsonPropertyName("executed")]
         public bool Executed { get; set; }
 
@@ -82,5 +98,38 @@ namespace AI_Crypto_Signal_Pro.Models
 
         [JsonPropertyName("executed_environment")]
         public string? ExecutedEnvironment { get; set; }
+
+        // ---- ICT Pending Limit Entry (2026-07-30) ----
+        // Under entry_mode "ict_pending" a signal is created PENDING_ENTRY at
+        // the ICT anchor price and becomes ACTIVE only once price actually
+        // trades into the zone. These mirror the backend SignalResponse
+        // fields exactly - see app/schemas/signal.py.
+
+        /// <summary>Which ICT anchor priced this entry: ote | order_block | fvg | supply_demand | limit | market.</summary>
+        [JsonPropertyName("entry_type")]
+        public string? EntryType { get; set; }
+
+        /// <summary>Top of the ICT entry zone. Price trading anywhere inside the zone fills the entry.</summary>
+        [JsonPropertyName("entry_zone_top")]
+        public decimal? EntryZoneTop { get; set; }
+
+        [JsonPropertyName("entry_zone_bottom")]
+        public decimal? EntryZoneBottom { get; set; }
+
+        /// <summary>When an unfilled pending entry is abandoned (never entered).</summary>
+        [JsonPropertyName("entry_expires_at")]
+        public DateTime? EntryExpiresAt { get; set; }
+
+        /// <summary>When the entry actually filled. Null while still PENDING_ENTRY.</summary>
+        [JsonPropertyName("filled_at")]
+        public DateTime? FilledAt { get; set; }
+
+        /// <summary>The real fill price - equals EntryPrice for a LIMIT entry by definition.</summary>
+        [JsonPropertyName("actual_fill_price")]
+        public decimal? ActualFillPrice { get; set; }
+
+        /// <summary>The resting LIMIT entry order on Binance, when Auto Trading has armed this entry.</summary>
+        [JsonPropertyName("entry_order_id")]
+        public string? EntryOrderId { get; set; }
     }
 }

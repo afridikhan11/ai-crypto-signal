@@ -1,0 +1,73 @@
+# Docker log driver cap (2026-07-27): the default json-file driver has NO
+# size limit unless told otherwise - a long-running production container
+# logging continuously (this app's scanner logs every symbol analysis
+# cycle) would otherwise grow this file on the host disk unbounded. 10MB x
+# 5 files = 50MB max per container, rotated automatically by Docker
+# itself - same idea as loguru's own in-app file rotation
+# (app/core/logging.py's "logs/app_{time}.log", rotation="10 MB",
+# retention="7 days"), just applied at the container-log level too so
+# `docker logs`/`docker compose logs` output can't silently fill the disk.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: crypto_signals
+    # No host port mapping - only the app container can reach Postgres,
+    # over the internal docker network, by service name ("db"). The dev
+    # compose file exposes 5432 to the host for local debugging; a
+    # production deployment should not expose the database directly.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    logging: *default-logging
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Same reasoning as db above - internal only in production.
+    logging: *default-logging
+    restart: unless-stopped
+
+  app:
+    build: .
+    # No --reload (that's a dev convenience that re-imports the whole app
+    # on every file change - unnecessary overhead and file-watching
+    # surface area in production) and explicitly --workers 1: the
+    # scanner/SignalMonitor/websocket listener are singleton in-process
+    # background tasks with no cross-worker coordination (no distributed
+    # lock), so running multiple workers would spin up multiple
+    # independent scanners generating duplicate signals against the same
+    # symbols. Scale this app vertically (bigger machine), not by adding
+    # uvicorn workers, unless that coordination is built first.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    # No bind-mount of source - production runs the code baked into the
+    # image at build time, not a live view of the host filesystem.
+    # logs/ IS mounted as a named volume (2026-07-27 addition) so loguru's
+    # file-based logs (app/core/logging.py's rotating "logs/app_{time}.log"
+    # files - the same ones already used for production debugging, e.g.
+    # the Gold Signal investigation) survive container restarts/redeploys
+    # instead of being lost with the container's ephemeral filesystem.
+    # Real-time `docker logs`/`docker compose logs` output (stdout) already
+    # worked before this change and is unaffected by it.
+    volumes:
+      - app_logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env.production
+    logging: *default-logging
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  app_logs:

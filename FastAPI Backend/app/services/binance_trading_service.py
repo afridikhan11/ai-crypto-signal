@@ -1,0 +1,834 @@
+"""
+app/services/binance_trading_service.py
+
+TRADE-EXECUTION Binance integration - the ONLY place in this codebase
+allowed to place, amend, or cancel a real order.
+
+--------------------------------------------------------------------------
+ARCHITECTURE / SEPARATION OF CONCERNS
+--------------------------------------------------------------------------
+This project now has THREE independent Binance integrations, each with a
+hard, deliberate boundary:
+
+    1. AI Module      -> app.services.binance_service.BinanceDataManager
+                          Public market-data endpoints only. Powers signal
+                          generation. Never touches an API key.
+
+    2. Account Module  -> app.services.binance_account_service.BinanceAccountService
+                          READ-ONLY authenticated endpoints (balances,
+                          positions, orders, trade history). Every method
+                          is a hard-coded HTTP GET - see that file's own
+                          docstring. Its own docstring explicitly says any
+                          order-placement feature must live in a separate,
+                          clearly-labelled service instead of being added
+                          there - THIS file is that separate service.
+
+    3. Trading Module  -> app.services.binance_trading_service.BinanceTradingService (this file)
+                          The only class in this codebase that sends a
+                          signed POST to Binance. Used exclusively by the
+                          Auto Trading feature (POST /trading/execute),
+                          which itself only fires when the user clicks
+                          "Execute" on a specific signal - never automatic,
+                          never from the scanner/AI module.
+
+--------------------------------------------------------------------------
+SCOPE (deliberately minimal for the first version)
+--------------------------------------------------------------------------
+* USD-M Futures only, matching where every signal's price data already
+  comes from (BinanceDataManager already points at fapi.binance.com).
+* Places exactly 3 orders per executed signal: a MARKET entry, a
+  STOP_MARKET stop-loss (reduceOnly), and a LIMIT take-profit (reduceOnly)
+  at the signal's single take_profit level (see app/models/signal.py).
+* Never changes leverage or margin type - whatever is already configured
+  on the account for that symbol is what the order uses.
+* Never a market order for exit - only reduceOnly stop/limit orders close
+  a position, so a slow/failed response can never accidentally flip or
+  double a position.
+
+--------------------------------------------------------------------------
+ENVIRONMENTS
+--------------------------------------------------------------------------
+Same testnet/mainnet switch as BinanceAccountService - `testnet=True`
+points every request at Binance's Demo Trading futures endpoint
+(demo-fapi.binance.com) instead of mainnet (fapi.binance.com). Whichever
+environment is selected in Settings (saved alongside the API key) is what
+every execution uses - there is no separate trading-only toggle.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import math
+import time
+from typing import Optional
+from urllib.parse import urlencode
+
+import httpx
+from loguru import logger
+from pydantic import BaseModel
+
+
+class BinanceTradingError(Exception):
+    """Raised when a Binance order-placement request fails or returns an error payload."""
+
+
+class OrderResult(BaseModel):
+    order_id: int
+    symbol: str
+    side: str
+    order_type: str
+    status: str
+    quantity: float
+    price: Optional[float] = None
+
+
+class ExecutionResult(BaseModel):
+    environment: str
+    symbol: str
+    entry_order: OrderResult
+    stop_loss_order: Optional[OrderResult] = None
+    take_profit_order: Optional[OrderResult] = None
+    quantity: float
+    warnings: list[str] = []
+
+
+class StopReplacementResult(BaseModel):
+    """Outcome of `BinanceTradingService.replace_stop_loss()` - see that
+    method's docstring for the exact ordering guarantee (new stop placed
+    BEFORE the old one is cancelled) that makes `success=False` here mean
+    "the position's existing protection is untouched", never "unprotected"."""
+
+    success: bool
+    new_order: Optional[OrderResult] = None
+    cancelled_order_ids: list[int] = []
+    warning: Optional[str] = None
+
+
+class BinanceTradingService:
+    FUTURES_MAINNET_URL = "https://fapi.binance.com"
+    FUTURES_TESTNET_URL = "https://demo-fapi.binance.com"
+
+    RECV_WINDOW = 5000
+    HTTP_TIMEOUT = 15.0
+    EXCHANGE_INFO_CACHE_TTL = 3600.0  # symbol precision rarely changes
+
+    # Retry policy for placing a REPLACEMENT stop order only (see
+    # replace_stop_loss) - a transient network failure here is retried
+    # before giving up, since the old stop stays active and untouched
+    # throughout, so trying harder costs nothing and can only help.
+    STOP_PLACEMENT_MAX_ATTEMPTS = 3
+    STOP_PLACEMENT_RETRY_DELAY_SECONDS = 1.0
+
+    def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
+        if not api_key or not api_secret:
+            raise ValueError("api_key and api_secret are required.")
+
+        self._api_key = api_key
+        self._api_secret = api_secret
+        self.testnet = testnet
+        self.environment = "testnet" if testnet else "mainnet"
+        self.base_url = self.FUTURES_TESTNET_URL if testnet else self.FUTURES_MAINNET_URL
+        self._client = httpx.AsyncClient(timeout=self.HTTP_TIMEOUT)
+        self._exchange_info_cache: Optional[tuple[dict, float]] = None
+
+    async def close(self):
+        await self._client.aclose()
+
+    async def __aenter__(self) -> "BinanceTradingService":
+        return self
+
+    async def __aexit__(self, *exc_info):
+        await self.close()
+
+    # ------------------------------------------------------------------
+    # Low-level request helpers
+    # ------------------------------------------------------------------
+    def _sign(self, params: dict) -> dict:
+        query_string = urlencode(params)
+        signature = hmac.new(
+            self._api_secret.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        params["signature"] = signature
+        return params
+
+    async def _signed_post(self, path: str, params: dict) -> dict:
+        """The ONLY method in this codebase that sends an order-placing POST to Binance."""
+        params = dict(params)
+        params["timestamp"] = int(time.time() * 1000)
+        params.setdefault("recvWindow", self.RECV_WINDOW)
+        params = self._sign(params)
+        headers = {"X-MBX-APIKEY": self._api_key}
+        resp = await self._client.post(f"{self.base_url}{path}", params=params, headers=headers)
+        return self._parse_or_raise(resp, f"POST {path}")
+
+    async def _public_get(self, path: str, params: Optional[dict] = None) -> dict:
+        resp = await self._client.get(f"{self.base_url}{path}", params=params or {})
+        return self._parse_or_raise(resp, f"GET {path}")
+
+    async def _signed_get(self, path: str, params: Optional[dict] = None):
+        """Signed, read-only GET (e.g. open orders) - never places, amends,
+        or cancels anything by itself. Returns whatever shape Binance sends
+        back (a dict for most endpoints, a list for `/fapi/v1/openOrders`) -
+        `_parse_or_raise` only inspects the HTTP status, not the payload
+        shape, so it's safe for both."""
+        params = dict(params or {})
+        params["timestamp"] = int(time.time() * 1000)
+        params.setdefault("recvWindow", self.RECV_WINDOW)
+        params = self._sign(params)
+        headers = {"X-MBX-APIKEY": self._api_key}
+        resp = await self._client.get(f"{self.base_url}{path}", params=params, headers=headers)
+        return self._parse_or_raise(resp, f"GET {path}")
+
+    async def _signed_delete(self, path: str, params: dict) -> dict:
+        """The ONLY method in this codebase that sends an order-cancelling
+        DELETE to Binance."""
+        params = dict(params)
+        params["timestamp"] = int(time.time() * 1000)
+        params.setdefault("recvWindow", self.RECV_WINDOW)
+        params = self._sign(params)
+        headers = {"X-MBX-APIKEY": self._api_key}
+        resp = await self._client.delete(f"{self.base_url}{path}", params=params, headers=headers)
+        return self._parse_or_raise(resp, f"DELETE {path}")
+
+    @staticmethod
+    def _parse_or_raise(resp: httpx.Response, context: str):
+        if resp.status_code >= 400:
+            code, msg = None, resp.text
+            try:
+                body = resp.json()
+                msg = body.get("msg", resp.text)
+                code = body.get("code")
+            except Exception:
+                pass
+            raise BinanceTradingError(f"{context} failed ({resp.status_code}, code={code}): {msg}")
+        return resp.json()
+
+    # ------------------------------------------------------------------
+    # Symbol precision (quantity/price rounding) - required or Binance
+    # rejects orders with -1111 (precision) / -4014 (tick size) errors.
+    # ------------------------------------------------------------------
+    async def _get_symbol_filters(self, symbol: str) -> dict:
+        now = time.monotonic()
+        if self._exchange_info_cache and (now - self._exchange_info_cache[1]) < self.EXCHANGE_INFO_CACHE_TTL:
+            info = self._exchange_info_cache[0]
+        else:
+            info = await self._public_get("/fapi/v1/exchangeInfo")
+            self._exchange_info_cache = (info, now)
+
+        for s in info.get("symbols", []):
+            if s.get("symbol") == symbol.upper():
+                step_size = 1.0
+                tick_size = 0.01
+                min_notional = 0.0
+                for f in s.get("filters", []):
+                    if f.get("filterType") == "LOT_SIZE":
+                        step_size = float(f["stepSize"])
+                    elif f.get("filterType") == "PRICE_FILTER":
+                        tick_size = float(f["tickSize"])
+                    elif f.get("filterType") == "MIN_NOTIONAL":
+                        # USD-M Futures uses "notional"; spot-style schemas use
+                        # "minNotional" - accept either so this doesn't silently
+                        # fall back to 0 if Binance ever changes the key.
+                        min_notional = float(f.get("notional") or f.get("minNotional") or 0.0)
+                return {"step_size": step_size, "tick_size": tick_size, "min_notional": min_notional}
+
+        raise BinanceTradingError(f"Symbol {symbol} not found in exchangeInfo - cannot size order safely.")
+
+    @staticmethod
+    def _round_to_step(value: float, step: float) -> float:
+        if step <= 0:
+            return value
+        precision = max(0, round(-math.log10(step)))
+        rounded = math.floor(value / step) * step
+        return round(rounded, precision)
+
+    @staticmethod
+    def _round_price(value: float, tick: float) -> float:
+        if tick <= 0:
+            return value
+        precision = max(0, round(-math.log10(tick)))
+        rounded = round(value / tick) * tick
+        return round(rounded, precision)
+
+    # ------------------------------------------------------------------
+    # Order placement
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _client_order_id(signal_id: Optional[str], leg: str) -> Optional[dict]:
+        """
+        Deterministic newClientOrderId per order leg, derived from the
+        signal's own id - so if POST /trading/execute is ever retried for
+        the same signal (double-click, client timeout-and-retry, proxy
+        retry), Binance itself rejects the duplicate (error -2010,
+        surfaced as a normal BinanceTradingError) instead of silently
+        opening a second real position. The DB-level `signal.executed`
+        flag (see trading.py) already blocks a second call from reaching
+        here at all in the normal case - this is a second, exchange-level
+        backstop for the race/retry window before that flag is committed.
+        Returns None (no override, Binance auto-generates one) if no
+        signal_id was supplied, so this stays fully optional/backward
+        compatible.
+        """
+        if not signal_id:
+            return None
+        # clientOrderId is capped at 36 chars on Binance Futures - a bare
+        # uuid4 hex is already 32, so keep the leg suffix to 1 char.
+        short_id = signal_id.replace("-", "")[:32]
+        return {"newClientOrderId": f"{short_id}{leg}"}
+
+    @staticmethod
+    def _stop_replacement_client_order_id(signal_id: Optional[str], new_stop_price: float) -> Optional[dict]:
+        """
+        Idempotency key for `replace_stop_loss()` - see that method's
+        docstring. Deterministic from (signal_id, new_stop_price) via a
+        stable hash (hashlib, NOT the builtin `hash()`, whose per-string
+        salt is randomized per process and would silently stop matching
+        after any process restart): the SAME trade-management decision
+        ("move this signal's stop to exactly this price") always produces
+        the SAME clientOrderId, so a retried/duplicated call for that exact
+        decision is rejected by Binance itself (-2010) instead of opening a
+        second resting stop order. A genuinely NEW decision (a different
+        price) always gets a genuinely new id, so real stop improvements
+        are never blocked.
+        """
+        if not signal_id:
+            return None
+        digest = hashlib.sha256(f"{signal_id}:{round(new_stop_price, 8)}".encode("utf-8")).hexdigest()[:8]
+        short_id = signal_id.replace("-", "")[:27]
+        return {"newClientOrderId": f"{short_id}R{digest}"}
+
+    async def place_signal_bracket(
+        self,
+        symbol: str,
+        direction: str,  # "LONG" | "SHORT"
+        quantity: float,
+        stop_loss: float,
+        take_profit: float,
+        entry_price: Optional[float] = None,
+        signal_id: Optional[str] = None,
+    ) -> ExecutionResult:
+        """
+        Places the MARKET entry, then the reduceOnly STOP_MARKET stop-loss
+        and reduceOnly LIMIT take-profit. If the stop-loss or
+        take-profit leg fails after the entry already filled, the entry is
+        NOT rolled back (there is no real position "undo") - the failure is
+        surfaced in `warnings` instead, so the caller/UI can tell the user
+        their position is open without full protection and needs manual
+        attention. This is the one case where "fail loudly, don't hide it"
+        matters more than a clean abstraction.
+
+        `entry_price` (the signal's recent reference price, not used as the
+        order price since entry is MARKET) is optional but strongly
+        recommended - it lets this reject a doomed order BEFORE sending it
+        if qty * price is under Binance's MIN_NOTIONAL floor for the
+        symbol, instead of letting Binance bounce it with an opaque -4164.
+
+        `signal_id` is optional and, when supplied, makes all three legs
+        idempotent via `newClientOrderId` (see `_client_order_id`).
+        """
+        symbol = symbol.upper()
+        filters = await self._get_symbol_filters(symbol)
+        qty = self._round_to_step(quantity, filters["step_size"])
+        if qty <= 0:
+            raise BinanceTradingError(
+                f"Computed quantity for {symbol} rounds down to 0 with this account size/risk% - "
+                "position too small to place."
+            )
+
+        min_notional = filters.get("min_notional", 0.0)
+        if min_notional > 0 and entry_price:
+            notional = qty * entry_price
+            if notional < min_notional:
+                raise BinanceTradingError(
+                    f"Order value ${notional:.2f} for {symbol} is below Binance's minimum notional "
+                    f"(${min_notional:.2f}) - increase risk % or account size, or skip this signal."
+                )
+
+        entry_side = "BUY" if direction == "LONG" else "SELL"
+        exit_side = "SELL" if direction == "LONG" else "BUY"
+
+        entry_params = {"symbol": symbol, "side": entry_side, "type": "MARKET", "quantity": qty}
+        entry_params.update(self._client_order_id(signal_id, "E") or {})
+        entry_raw = await self._signed_post("/fapi/v1/order", entry_params)
+        entry_order = OrderResult(
+            order_id=entry_raw["orderId"],
+            symbol=symbol,
+            side=entry_side,
+            order_type="MARKET",
+            status=entry_raw.get("status", "NEW"),
+            quantity=qty,
+        )
+
+        warnings: list[str] = []
+        sl_order: Optional[OrderResult] = None
+        tp_order: Optional[OrderResult] = None
+
+        stop_price = self._round_price(stop_loss, filters["tick_size"])
+        try:
+            sl_params = {
+                "symbol": symbol,
+                "side": exit_side,
+                "type": "STOP_MARKET",
+                "stopPrice": stop_price,
+                "quantity": qty,
+                "reduceOnly": "true",
+            }
+            sl_params.update(self._client_order_id(signal_id, "S") or {})
+            sl_raw = await self._signed_post("/fapi/v1/order", sl_params)
+            sl_order = OrderResult(
+                order_id=sl_raw["orderId"],
+                symbol=symbol,
+                side=exit_side,
+                order_type="STOP_MARKET",
+                status=sl_raw.get("status", "NEW"),
+                quantity=qty,
+                price=stop_price,
+            )
+        except BinanceTradingError as exc:
+            warnings.append(f"Entry filled but stop-loss order FAILED: {exc}. Close/protect this position manually.")
+
+        tp_price = self._round_price(take_profit, filters["tick_size"])
+        try:
+            tp_params = {
+                "symbol": symbol,
+                "side": exit_side,
+                "type": "LIMIT",
+                "price": tp_price,
+                "quantity": qty,
+                "timeInForce": "GTC",
+                "reduceOnly": "true",
+            }
+            tp_params.update(self._client_order_id(signal_id, "T") or {})
+            tp_raw = await self._signed_post("/fapi/v1/order", tp_params)
+            tp_order = OrderResult(
+                order_id=tp_raw["orderId"],
+                symbol=symbol,
+                side=exit_side,
+                order_type="LIMIT",
+                status=tp_raw.get("status", "NEW"),
+                quantity=qty,
+                price=tp_price,
+            )
+        except BinanceTradingError as exc:
+            warnings.append(f"Entry filled but take-profit order FAILED: {exc}. Set TP manually.")
+
+        return ExecutionResult(
+            environment=self.environment,
+            symbol=symbol,
+            entry_order=entry_order,
+            stop_loss_order=sl_order,
+            take_profit_order=tp_order,
+            quantity=qty,
+            warnings=warnings,
+        )
+
+    # ------------------------------------------------------------------
+    # ICT Pending Limit Entry (2026-07-30) - two-stage execution.
+    #
+    # Stage 1 (`place_limit_entry`) rests a LIMIT order at the ICT entry
+    # price. Stage 2 (`place_protective_orders`) attaches the stop-loss and
+    # take-profit AFTER that entry has actually filled. The two stages
+    # cannot be merged: a reduceOnly order is rejected by Binance when no
+    # position exists yet, so protection genuinely cannot be placed until
+    # the entry fills.
+    #
+    # Both reuse the SAME filters, rounding, idempotent client-order-id and
+    # MIN_NOTIONAL checks as `place_signal_bracket()` above - this is the
+    # same execution discipline split across two moments in time, not a
+    # second implementation.
+    # ------------------------------------------------------------------
+    async def place_limit_entry(
+        self,
+        symbol: str,
+        direction: str,  # "LONG" | "SHORT"
+        quantity: float,
+        entry_price: float,
+        signal_id: Optional[str] = None,
+    ) -> OrderResult:
+        """
+        Rests a GTC LIMIT entry order at `entry_price` - the ICT anchor
+        price (OTE / order block / FVG midpoint). Because a LIMIT order
+        fills AT its limit price, the signal's recorded `entry_price` and
+        the real fill price are the same number, which is what keeps
+        position sizing (`quantity = risk_usd / |entry - stop|`), breakeven
+        at 1R and backtested Risk:Reward correct by construction.
+
+        No protective orders are placed here - see
+        `place_protective_orders()`, called once the fill is observed.
+        """
+        symbol = symbol.upper()
+        filters = await self._get_symbol_filters(symbol)
+        qty = self._round_to_step(quantity, filters["step_size"])
+        if qty <= 0:
+            raise BinanceTradingError(
+                f"Computed quantity for {symbol} rounds down to 0 with this account size/risk% - "
+                "position too small to place."
+            )
+
+        limit_price = self._round_price(entry_price, filters["tick_size"])
+        min_notional = filters.get("min_notional", 0.0)
+        if min_notional > 0 and limit_price:
+            notional = qty * limit_price
+            if notional < min_notional:
+                raise BinanceTradingError(
+                    f"Order value ${notional:.2f} for {symbol} is below Binance's minimum notional "
+                    f"(${min_notional:.2f}) - increase risk % or account size, or skip this signal."
+                )
+
+        entry_side = "BUY" if direction == "LONG" else "SELL"
+        params = {
+            "symbol": symbol,
+            "side": entry_side,
+            "type": "LIMIT",
+            "price": limit_price,
+            "quantity": qty,
+            "timeInForce": "GTC",
+        }
+        params.update(self._client_order_id(signal_id, "E") or {})
+        raw = await self._signed_post("/fapi/v1/order", params)
+        logger.info(
+            f"{symbol}: ICT pending LIMIT entry placed | {direction} | qty={qty} @ {limit_price} "
+            f"| order {raw['orderId']}"
+        )
+        return OrderResult(
+            order_id=raw["orderId"],
+            symbol=symbol,
+            side=entry_side,
+            order_type="LIMIT",
+            status=raw.get("status", "NEW"),
+            quantity=qty,
+            price=limit_price,
+        )
+
+    async def place_protective_orders(
+        self,
+        symbol: str,
+        direction: str,
+        quantity: float,
+        stop_loss: float,
+        take_profit: float,
+        signal_id: Optional[str] = None,
+    ) -> tuple[Optional[OrderResult], Optional[OrderResult], list[str]]:
+        """
+        Attaches the reduceOnly STOP_MARKET stop-loss and reduceOnly LIMIT
+        take-profit to an ALREADY-FILLED position. `quantity` must be the
+        real filled quantity (see `get_order()`), not the originally
+        requested size - a partial fill protected at the full requested size
+        would leave a reduceOnly order larger than the position.
+
+        Returns `(sl_order, tp_order, warnings)`. A failure on either leg is
+        reported in `warnings` rather than raised, matching
+        `place_signal_bracket()`'s existing "the position is open, say so
+        loudly rather than pretend it isn't" contract.
+        """
+        symbol = symbol.upper()
+        filters = await self._get_symbol_filters(symbol)
+        qty = self._round_to_step(quantity, filters["step_size"])
+        exit_side = "SELL" if direction == "LONG" else "BUY"
+
+        warnings: list[str] = []
+        sl_order: Optional[OrderResult] = None
+        tp_order: Optional[OrderResult] = None
+
+        if qty <= 0:
+            warnings.append(
+                f"Filled quantity for {symbol} rounds to 0 - no protective orders placed. "
+                "Check this position manually."
+            )
+            return None, None, warnings
+
+        stop_price = self._round_price(stop_loss, filters["tick_size"])
+        try:
+            sl_params = {
+                "symbol": symbol,
+                "side": exit_side,
+                "type": "STOP_MARKET",
+                "stopPrice": stop_price,
+                "quantity": qty,
+                "reduceOnly": "true",
+            }
+            sl_params.update(self._client_order_id(signal_id, "S") or {})
+            sl_raw = await self._signed_post("/fapi/v1/order", sl_params)
+            sl_order = OrderResult(
+                order_id=sl_raw["orderId"], symbol=symbol, side=exit_side,
+                order_type="STOP_MARKET", status=sl_raw.get("status", "NEW"),
+                quantity=qty, price=stop_price,
+            )
+        except BinanceTradingError as exc:
+            warnings.append(
+                f"Pending entry FILLED but stop-loss order FAILED: {exc}. "
+                "This position is open WITHOUT a stop - protect it manually."
+            )
+
+        tp_price = self._round_price(take_profit, filters["tick_size"])
+        try:
+            tp_params = {
+                "symbol": symbol,
+                "side": exit_side,
+                "type": "LIMIT",
+                "price": tp_price,
+                "quantity": qty,
+                "timeInForce": "GTC",
+                "reduceOnly": "true",
+            }
+            tp_params.update(self._client_order_id(signal_id, "T") or {})
+            tp_raw = await self._signed_post("/fapi/v1/order", tp_params)
+            tp_order = OrderResult(
+                order_id=tp_raw["orderId"], symbol=symbol, side=exit_side,
+                order_type="LIMIT", status=tp_raw.get("status", "NEW"),
+                quantity=qty, price=tp_price,
+            )
+        except BinanceTradingError as exc:
+            warnings.append(f"Pending entry filled but take-profit order FAILED: {exc}. Set TP manually.")
+
+        return sl_order, tp_order, warnings
+
+    async def get_order(self, symbol: str, order_id: int) -> dict:
+        """
+        Read-only: the live state of a single order, fetched fresh from
+        Binance. Used by the pending-entry reconciliation pass to decide
+        whether a resting LIMIT entry has FILLED (and with what
+        `executedQty`/`avgPrice`), is still NEW/PARTIALLY_FILLED, or is gone
+        (CANCELED/EXPIRED/REJECTED). Never trusts any locally cached value.
+        """
+        return await self._signed_get(
+            "/fapi/v1/order", {"symbol": symbol.upper(), "orderId": order_id}
+        )
+
+    async def close_position(self, symbol: str, position_amt: float) -> OrderResult:
+        """
+        Fully closes an existing position with a single reduceOnly MARKET
+        order. `position_amt` must be the LIVE signed position size fetched
+        fresh from Binance right before calling this (positive = long,
+        negative = short) - the caller (POST /trading/close-position) is
+        responsible for that freshness, this method never trusts a
+        client-supplied quantity for anything except the sign/magnitude of
+        an already-open position.
+        """
+        symbol = symbol.upper()
+        if position_amt == 0:
+            raise BinanceTradingError(f"No open position on {symbol} to close.")
+
+        filters = await self._get_symbol_filters(symbol)
+        qty = self._round_to_step(abs(position_amt), filters["step_size"])
+        if qty <= 0:
+            raise BinanceTradingError(f"Position quantity for {symbol} rounds down to 0 - cannot close.")
+
+        close_side = "SELL" if position_amt > 0 else "BUY"
+        raw = await self._signed_post(
+            "/fapi/v1/order",
+            {"symbol": symbol, "side": close_side, "type": "MARKET", "quantity": qty, "reduceOnly": "true"},
+        )
+        return OrderResult(
+            order_id=raw["orderId"],
+            symbol=symbol,
+            side=close_side,
+            order_type="MARKET",
+            status=raw.get("status", "NEW"),
+            quantity=qty,
+        )
+
+    # ------------------------------------------------------------------
+    # Exchange stop synchronization (Live Execution Safety, 2026-07-30)
+    # ------------------------------------------------------------------
+    # WHY THIS EXISTS: TradeManagementEngine's breakeven/trailing decisions
+    # (app/scheduler/signal_monitor.py) used to update only the `Signal`
+    # row's `stop_loss` column - the real STOP_MARKET order resting on
+    # Binance for an EXECUTED signal was never touched, so the database,
+    # dashboard, and exchange could silently disagree about how a live
+    # position was actually protected. `replace_stop_loss()` closes that
+    # gap by finding the resting stop order(s) and safely swapping them for
+    # a new one at the tightened price.
+    #
+    # NO NEW DATABASE COLUMN: the exchange order id of an executed signal's
+    # stop-loss is intentionally NOT persisted anywhere. This repository has
+    # no schema-migration tool configured (no Alembic - a standing,
+    # previously-disclosed architectural gap), so adding a column would risk
+    # breaking an already-deployed database. Instead, the CURRENT resting
+    # stop order is looked up live via `get_open_stop_orders()` every time -
+    # schema-free, and self-correcting if a previous sync attempt partially
+    # failed (see below).
+    async def cancel_order(self, symbol: str, order_id: int) -> None:
+        """Cancels a single existing order by id. Public wrapper over
+        `_signed_delete` so other modules (e.g. `signal_monitor.py`'s
+        stray-stop cleanup after a structure-failure close) never need to
+        reach into a private, underscore-prefixed method directly."""
+        await self._signed_delete("/fapi/v1/order", {"symbol": symbol.upper(), "orderId": order_id})
+
+    async def get_open_stop_orders(self, symbol: str) -> list[dict]:
+        """
+        Read-only: the currently-resting reduceOnly STOP_MARKET order(s)
+        for `symbol`, freshly fetched from Binance (never trusted from any
+        cached/stored value). Ordinarily exactly one, for this platform's
+        one-order-per-signal execution model - a list is still returned
+        (rather than the single most-recent one) so a caller can safely
+        cancel every stray stop it finds, not just the newest.
+        """
+        symbol = symbol.upper()
+        rows = await self._signed_get("/fapi/v1/openOrders", {"symbol": symbol})
+        if not isinstance(rows, list):
+            return []
+        return [
+            r for r in rows
+            if r.get("type") == "STOP_MARKET" and r.get("reduceOnly") in (True, "true", "True")
+        ]
+
+    async def get_all_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
+        """
+        Read-only: every currently-open order, any type (MARKET fills never
+        stay open, so in practice this is STOP_MARKET/LIMIT/etc. resting
+        orders) - unlike `get_open_stop_orders()`, this is NOT filtered to
+        reduceOnly stop orders, since the Auto Trading Control Panel's
+        Cancel Pending Orders action (2026-07-30) must be able to clear any
+        stray resting order, not just protective stops. `symbol=None` asks
+        Binance for every open order account-wide in a single call (real
+        `/fapi/v1/openOrders` behavior - a heavier signed request than the
+        per-symbol form, so only used here and not on the hot per-signal
+        stop-sync path, which already knows its own symbol).
+        """
+        params = {"symbol": symbol.upper()} if symbol else {}
+        rows = await self._signed_get("/fapi/v1/openOrders", params)
+        if not isinstance(rows, list):
+            return []
+        return rows
+
+    async def replace_stop_loss(
+        self,
+        symbol: str,
+        direction: str,  # "LONG" | "SHORT"
+        quantity: float,
+        new_stop_price: float,
+        signal_id: Optional[str] = None,
+    ) -> StopReplacementResult:
+        """
+        Safely moves an EXECUTED signal's live protective stop to
+        `new_stop_price`.
+
+        ORDERING GUARANTEE (the whole point of this method): the NEW stop is
+        placed FIRST. Only once it is confirmed resting on the exchange are
+        any OLD stop order(s) for this symbol cancelled. If placing the new
+        stop fails for any reason, this method returns immediately with
+        `success=False` and touches nothing else - the old stop, whatever it
+        was, is still exactly where it was. Protection can therefore only
+        ever be ADDED before it is removed, never removed first - it is
+        never allowed to become weaker or disappear, even for an instant.
+
+        If the new stop places successfully but cancelling an old one fails,
+        that is logged as a warning, not a hard failure: having two resting
+        reduceOnly stop orders is redundant but harmless (whichever price
+        the market reaches first fills; Binance auto-adjusts/cancels a
+        reduceOnly order that would exceed the now-smaller position), and
+        the next successful sync will find and clean up the stray order.
+        `success=True` is only ever returned once real, confirmed
+        protection is in place at the new price - a partial cancel failure
+        never downgrades that to `success=False`.
+        """
+        symbol = symbol.upper()
+        exit_side = "SELL" if direction == "LONG" else "BUY"
+        filters = await self._get_symbol_filters(symbol)
+        stop_price = self._round_price(new_stop_price, filters["tick_size"])
+        qty = self._round_to_step(quantity, filters["step_size"])
+
+        if qty <= 0:
+            return StopReplacementResult(
+                success=False,
+                warning=f"Computed quantity for {symbol} rounds down to 0 - refusing to replace the stop; "
+                        f"the existing stop order (if any) is untouched.",
+            )
+
+        # 1. Look up what is currently resting BEFORE changing anything, so
+        #    we know what (if anything) needs cancelling afterward.
+        try:
+            existing_stops = await self.get_open_stop_orders(symbol)
+        except BinanceTradingError as exc:
+            return StopReplacementResult(
+                success=False,
+                warning=f"Could not read existing stop orders for {symbol} - refusing to proceed "
+                        f"without knowing current protection state: {exc}",
+            )
+
+        # 2. Place the NEW stop. Nothing existing is touched yet.
+        #
+        # RETRY: a transient network failure (timeout/connection error, NOT
+        # a definitive Binance rejection like bad params) is retried a
+        # bounded number of times before giving up - the old stop stays
+        # untouched throughout, so a retry never risks a moment of no
+        # protection, and trying harder here directly serves "never leave
+        # position unprotected" better than failing on the first hiccup.
+        # A `BinanceTradingError` (Binance itself rejected the request) is
+        # NOT retried - retrying an invalid request would just fail the
+        # same way again.
+        new_params = {
+            "symbol": symbol, "side": exit_side, "type": "STOP_MARKET",
+            "stopPrice": stop_price, "quantity": qty, "reduceOnly": "true",
+        }
+        new_params.update(self._stop_replacement_client_order_id(signal_id, stop_price) or {})
+
+        new_raw = None
+        last_network_error: Optional[Exception] = None
+        for attempt in range(1, self.STOP_PLACEMENT_MAX_ATTEMPTS + 1):
+            try:
+                new_raw = await self._signed_post("/fapi/v1/order", new_params)
+                last_network_error = None
+                break
+            except BinanceTradingError as exc:
+                logger.warning(
+                    f"{symbol}: new stop-loss order at {stop_price} FAILED to place - "
+                    f"existing protection is untouched: {exc}"
+                )
+                return StopReplacementResult(
+                    success=False,
+                    warning=f"New stop-loss order at {stop_price} failed to place - existing protection "
+                            f"is untouched and remains active: {exc}",
+                )
+            except httpx.RequestError as exc:
+                last_network_error = exc
+                logger.warning(
+                    f"{symbol}: network error placing new stop at {stop_price} "
+                    f"(attempt {attempt}/{self.STOP_PLACEMENT_MAX_ATTEMPTS}): {exc}"
+                )
+                if attempt < self.STOP_PLACEMENT_MAX_ATTEMPTS:
+                    await asyncio.sleep(self.STOP_PLACEMENT_RETRY_DELAY_SECONDS)
+
+        if new_raw is None:
+            return StopReplacementResult(
+                success=False,
+                warning=f"New stop-loss order at {stop_price} failed to place after "
+                        f"{self.STOP_PLACEMENT_MAX_ATTEMPTS} attempts (network errors) - existing "
+                        f"protection is untouched and remains active: {last_network_error}",
+            )
+
+        new_order = OrderResult(
+            order_id=new_raw["orderId"], symbol=symbol, side=exit_side, order_type="STOP_MARKET",
+            status=new_raw.get("status", "NEW"), quantity=qty, price=stop_price,
+        )
+        logger.success(f"{symbol}: new stop-loss order placed at {stop_price} (order {new_raw['orderId']}).")
+
+        # 3. Only now cancel the OLD stop(s) - the new one is already
+        #    confirmed resting, so the position is never briefly unprotected.
+        cancelled_ids: list[int] = []
+        cancel_warnings: list[str] = []
+        for old in existing_stops:
+            old_id = old.get("orderId")
+            if old_id is None or old_id == new_raw["orderId"]:
+                continue
+            try:
+                await self.cancel_order(symbol, old_id)
+                cancelled_ids.append(old_id)
+                logger.info(f"{symbol}: old stop-loss order {old_id} cancelled.")
+            except BinanceTradingError as exc:
+                msg = (
+                    f"Old stop order {old_id} could not be cancelled (will retry on the next sync) - "
+                    f"two stop orders may be resting simultaneously, which is redundant but not unsafe: {exc}"
+                )
+                logger.warning(f"{symbol}: {msg}")
+                cancel_warnings.append(msg)
+
+        return StopReplacementResult(
+            success=True,
+            new_order=new_order,
+            cancelled_order_ids=cancelled_ids,
+            warning="; ".join(cancel_warnings) or None,
+        )

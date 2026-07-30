@@ -52,8 +52,73 @@ public class SignalModel
 
     public string? ExecutedEnvironment { get; set; }
 
-    /// <summary>What the Execute button in Auto Trading should show/do for this row.</summary>
-    public string ExecuteButtonLabel => Executed ? $"Executed ({ExecutedEnvironment})" : "Execute";
+    // ---- ICT Pending Limit Entry (2026-07-30) ----
+    public string? EntryType { get; set; }
+
+    public decimal? EntryZoneTop { get; set; }
+
+    public decimal? EntryZoneBottom { get; set; }
+
+    public DateTime? EntryExpiresAt { get; set; }
+
+    public DateTime? FilledAt { get; set; }
+
+    public decimal? ActualFillPrice { get; set; }
+
+    public string? EntryOrderId { get; set; }
+
+    /// <summary>True while the ICT entry zone has been identified but price has not traded into it yet - no position exists.</summary>
+    public bool IsPendingEntry => string.Equals(Status, "PENDING_ENTRY", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the setup was abandoned without ever being entered (window elapsed, or invalidated before fill).</summary>
+    public bool IsExpired => string.Equals(Status, "EXPIRED", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What the Execute button in Auto Trading should show/do for this row.
+    /// An ARMED pending entry (executed, but not yet filled) is deliberately
+    /// distinguished from a filled position: "Armed" means a LIMIT order is
+    /// resting at the entry price and no position exists yet, which is a
+    /// materially different state for the user than "Executed".
+    /// </summary>
+    public string ExecuteButtonLabel =>
+        Executed
+            ? (IsPendingEntry ? $"Armed ({ExecutedEnvironment})" : $"Executed ({ExecutedEnvironment})")
+            : (IsPendingEntry ? "Arm Entry" : "Execute");
+
+    /// <summary>Human-readable state of the ICT entry, for the Entry column / status chip.</summary>
+    public string EntryStateDisplay
+    {
+        get
+        {
+            if (IsExpired)
+                return "Never entered";
+            if (IsPendingEntry)
+                return Executed
+                    ? $"Armed @ {Entry:0.########} ({EntryType})"
+                    : $"Waiting @ {Entry:0.########} ({EntryType})";
+            if (ActualFillPrice.HasValue)
+                return $"Filled @ {ActualFillPrice.Value:0.########}";
+            return $"{Entry:0.########}";
+        }
+    }
+
+    private const string ColorPending = "#FFB74D";
+    private const string ColorActive = "#00E676";
+    private const string ColorExpired = "#9E9E9E";
+    private const string ColorClosed = "#64B5F6";
+
+    /// <summary>
+    /// Status chip colour. Hex strings bound directly to a Brush property,
+    /// matching the existing MainWindowViewModel.BackendStatusColor /
+    /// TradingStatusDto convention already used across this app.
+    /// </summary>
+    public string StatusColor => Status?.ToUpperInvariant() switch
+    {
+        "PENDING_ENTRY" => ColorPending,
+        "ACTIVE" => ColorActive,
+        "EXPIRED" => ColorExpired,
+        _ => ColorClosed,
+    };
 
     /// <summary>
     /// Null whenever no Binance account is linked (or the balance fetch

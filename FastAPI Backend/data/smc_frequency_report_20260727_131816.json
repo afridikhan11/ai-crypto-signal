@@ -1,0 +1,362 @@
+{
+  "BTCUSDT": {
+    "symbol": "BTCUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 773,
+      "bos_per_100_steps": 57.47,
+      "choch_events": 42,
+      "choch_per_100_steps": 3.12,
+      "ob_formations": 787,
+      "ob_per_100_steps": 58.51,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 815,
+      "sweep_per_100_steps": 60.59,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 382,
+      "confluence_2of2_per_100_steps": 28.4
+    },
+    "confidence_impact": {
+      "steps_with_break": 815,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "ETHUSDT": {
+    "symbol": "ETHUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 815,
+      "bos_per_100_steps": 60.59,
+      "choch_events": 24,
+      "choch_per_100_steps": 1.78,
+      "ob_formations": 748,
+      "ob_per_100_steps": 55.61,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 839,
+      "sweep_per_100_steps": 62.38,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 313,
+      "confluence_2of2_per_100_steps": 23.27
+    },
+    "confidence_impact": {
+      "steps_with_break": 839,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "SOLUSDT": {
+    "symbol": "SOLUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 737,
+      "bos_per_100_steps": 54.8,
+      "choch_events": 19,
+      "choch_per_100_steps": 1.41,
+      "ob_formations": 633,
+      "ob_per_100_steps": 47.06,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 756,
+      "sweep_per_100_steps": 56.21,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 429,
+      "confluence_2of2_per_100_steps": 31.9
+    },
+    "confidence_impact": {
+      "steps_with_break": 756,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "BNBUSDT": {
+    "symbol": "BNBUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 855,
+      "bos_per_100_steps": 63.57,
+      "choch_events": 44,
+      "choch_per_100_steps": 3.27,
+      "ob_formations": 675,
+      "ob_per_100_steps": 50.19,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 899,
+      "sweep_per_100_steps": 66.84,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 391,
+      "confluence_2of2_per_100_steps": 29.07
+    },
+    "confidence_impact": {
+      "steps_with_break": 899,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "XRPUSDT": {
+    "symbol": "XRPUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 827,
+      "bos_per_100_steps": 61.49,
+      "choch_events": 51,
+      "choch_per_100_steps": 3.79,
+      "ob_formations": 791,
+      "ob_per_100_steps": 58.81,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 878,
+      "sweep_per_100_steps": 65.28,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 389,
+      "confluence_2of2_per_100_steps": 28.92
+    },
+    "confidence_impact": {
+      "steps_with_break": 878,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "XAUUSDT": {
+    "symbol": "XAUUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 736,
+      "bos_per_100_steps": 54.72,
+      "choch_events": 51,
+      "choch_per_100_steps": 3.79,
+      "ob_formations": 737,
+      "ob_per_100_steps": 54.8,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 787,
+      "sweep_per_100_steps": 58.51,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 252,
+      "confluence_2of2_per_100_steps": 18.74
+    },
+    "confidence_impact": {
+      "steps_with_break": 787,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "XAGUSDT": {
+    "symbol": "XAGUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 588,
+      "bos_per_100_steps": 43.72,
+      "choch_events": 77,
+      "choch_per_100_steps": 5.72,
+      "ob_formations": 513,
+      "ob_per_100_steps": 38.14,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 665,
+      "sweep_per_100_steps": 49.44,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 195,
+      "confluence_2of2_per_100_steps": 14.5
+    },
+    "confidence_impact": {
+      "steps_with_break": 665,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "CLUSDT": {
+    "symbol": "CLUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 759,
+      "bos_per_100_steps": 56.43,
+      "choch_events": 22,
+      "choch_per_100_steps": 1.64,
+      "ob_formations": 776,
+      "ob_per_100_steps": 57.7,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 781,
+      "sweep_per_100_steps": 58.07,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 191,
+      "confluence_2of2_per_100_steps": 14.2
+    },
+    "confidence_impact": {
+      "steps_with_break": 781,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  },
+  "BZUSDT": {
+    "symbol": "BZUSDT",
+    "candles_loaded": 1844,
+    "frequency": {
+      "steps": 1345,
+      "bos_events": 823,
+      "bos_per_100_steps": 61.19,
+      "choch_events": 25,
+      "choch_per_100_steps": 1.86,
+      "ob_formations": 841,
+      "ob_per_100_steps": 62.53,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 848,
+      "sweep_per_100_steps": 63.05,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 424,
+      "confluence_2of2_per_100_steps": 31.52
+    },
+    "confidence_impact": {
+      "steps_with_break": 848,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    }
+  }
+}

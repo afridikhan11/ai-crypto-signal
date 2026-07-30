@@ -1,0 +1,965 @@
+{
+  "BTCUSDT": {
+    "symbol": "BTCUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3142,
+      "bos_per_100_steps": 54.54,
+      "choch_events": 93,
+      "choch_per_100_steps": 1.61,
+      "ob_formations": 2792,
+      "ob_per_100_steps": 48.46,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3146,
+      "sweep_per_100_steps": 54.61,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1152,
+      "confluence_2of2_per_100_steps": 20.0
+    },
+    "confidence_impact": {
+      "steps_with_break": 3235,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3235,
+      "baseline_confluence_2of2_per_100_steps": 20.0,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 258740.5,
+        "detector_time_us_per_step": 44912.4
+      },
+      "ict": {
+        "new_formations": 558,
+        "new_formations_per_100_steps": 9.69,
+        "present_steps": 3171,
+        "present_per_100_steps": 55.04,
+        "avg_size_pct_of_price": 0.1857,
+        "avg_size_atr_multiple": 0.573,
+        "filled_count": 546,
+        "aged_out_count": 10,
+        "still_open_at_end": 2,
+        "filled_pct_of_lifecycle": 97.8,
+        "unfilled_pct_of_lifecycle": 0.4,
+        "aged_out_pct_of_lifecycle": 1.8,
+        "ob_overlap_count": 78,
+        "ob_overlap_pct_of_new_formations": 14.0,
+        "confluence_3of3_count": 313,
+        "confluence_3of3_per_100_steps": 5.43,
+        "detector_time_ms_total": 452309.6,
+        "detector_time_us_per_step": 78512.3
+      },
+      "wall_time_s": 809.91
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3235,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3235,
+        "min": 41,
+        "max": 71,
+        "mean": 61.14,
+        "median": 62,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3235,
+        "min": 43,
+        "max": 73,
+        "mean": 62.81,
+        "median": 64,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 724.68
+    }
+  },
+  "ETHUSDT": {
+    "symbol": "ETHUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3218,
+      "bos_per_100_steps": 55.86,
+      "choch_events": 131,
+      "choch_per_100_steps": 2.27,
+      "ob_formations": 2881,
+      "ob_per_100_steps": 50.01,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3156,
+      "sweep_per_100_steps": 54.78,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 999,
+      "confluence_2of2_per_100_steps": 17.34
+    },
+    "confidence_impact": {
+      "steps_with_break": 3349,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3349,
+      "baseline_confluence_2of2_per_100_steps": 17.34,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 260654.6,
+        "detector_time_us_per_step": 45244.7
+      },
+      "ict": {
+        "new_formations": 571,
+        "new_formations_per_100_steps": 9.91,
+        "present_steps": 3306,
+        "present_per_100_steps": 57.39,
+        "avg_size_pct_of_price": 0.2594,
+        "avg_size_atr_multiple": 0.569,
+        "filled_count": 558,
+        "aged_out_count": 9,
+        "still_open_at_end": 4,
+        "filled_pct_of_lifecycle": 97.7,
+        "unfilled_pct_of_lifecycle": 0.7,
+        "aged_out_pct_of_lifecycle": 1.6,
+        "ob_overlap_count": 77,
+        "ob_overlap_pct_of_new_formations": 13.5,
+        "confluence_3of3_count": 329,
+        "confluence_3of3_per_100_steps": 5.71,
+        "detector_time_ms_total": 456000.8,
+        "detector_time_us_per_step": 79153.1
+      },
+      "wall_time_s": 819.31
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3349,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3349,
+        "min": 39,
+        "max": 71,
+        "mean": 60.78,
+        "median": 62,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3349,
+        "min": 41,
+        "max": 74,
+        "mean": 62.45,
+        "median": 64,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 1046.59
+    }
+  },
+  "SOLUSDT": {
+    "symbol": "SOLUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3363,
+      "bos_per_100_steps": 58.38,
+      "choch_events": 124,
+      "choch_per_100_steps": 2.15,
+      "ob_formations": 3145,
+      "ob_per_100_steps": 54.59,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3487,
+      "sweep_per_100_steps": 60.53,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1412,
+      "confluence_2of2_per_100_steps": 24.51
+    },
+    "confidence_impact": {
+      "steps_with_break": 3487,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3487,
+      "baseline_confluence_2of2_per_100_steps": 24.51,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 236330.0,
+        "detector_time_us_per_step": 41022.4
+      },
+      "ict": {
+        "new_formations": 641,
+        "new_formations_per_100_steps": 11.13,
+        "present_steps": 3436,
+        "present_per_100_steps": 59.64,
+        "avg_size_pct_of_price": 0.2624,
+        "avg_size_atr_multiple": 0.511,
+        "filled_count": 629,
+        "aged_out_count": 7,
+        "still_open_at_end": 5,
+        "filled_pct_of_lifecycle": 98.1,
+        "unfilled_pct_of_lifecycle": 0.8,
+        "aged_out_pct_of_lifecycle": 1.1,
+        "ob_overlap_count": 86,
+        "ob_overlap_pct_of_new_formations": 13.4,
+        "confluence_3of3_count": 551,
+        "confluence_3of3_per_100_steps": 9.56,
+        "detector_time_ms_total": 435271.7,
+        "detector_time_us_per_step": 75554.9
+      },
+      "wall_time_s": 751.53
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3487,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3487,
+        "min": 41,
+        "max": 70,
+        "mean": 61.12,
+        "median": 62,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3487,
+        "min": 43,
+        "max": 73,
+        "mean": 62.9,
+        "median": 64,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 700.69
+    }
+  },
+  "BNBUSDT": {
+    "symbol": "BNBUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3316,
+      "bos_per_100_steps": 57.56,
+      "choch_events": 144,
+      "choch_per_100_steps": 2.5,
+      "ob_formations": 2949,
+      "ob_per_100_steps": 51.19,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3439,
+      "sweep_per_100_steps": 59.69,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1550,
+      "confluence_2of2_per_100_steps": 26.91
+    },
+    "confidence_impact": {
+      "steps_with_break": 3460,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3460,
+      "baseline_confluence_2of2_per_100_steps": 26.91,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 186755.6,
+        "detector_time_us_per_step": 32417.2
+      },
+      "ict": {
+        "new_formations": 595,
+        "new_formations_per_100_steps": 10.33,
+        "present_steps": 3315,
+        "present_per_100_steps": 57.54,
+        "avg_size_pct_of_price": 0.1905,
+        "avg_size_atr_multiple": 0.59,
+        "filled_count": 589,
+        "aged_out_count": 4,
+        "still_open_at_end": 2,
+        "filled_pct_of_lifecycle": 99.0,
+        "unfilled_pct_of_lifecycle": 0.3,
+        "aged_out_pct_of_lifecycle": 0.7,
+        "ob_overlap_count": 92,
+        "ob_overlap_pct_of_new_formations": 15.5,
+        "confluence_3of3_count": 492,
+        "confluence_3of3_per_100_steps": 8.54,
+        "detector_time_ms_total": 335889.9,
+        "detector_time_us_per_step": 58304.1
+      },
+      "wall_time_s": 593.24
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3460,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3460,
+        "min": 42,
+        "max": 70,
+        "mean": 60.81,
+        "median": 62.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3460,
+        "min": 43,
+        "max": 73,
+        "mean": 62.42,
+        "median": 63.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 759.01
+    }
+  },
+  "XRPUSDT": {
+    "symbol": "XRPUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3565,
+      "bos_per_100_steps": 61.88,
+      "choch_events": 113,
+      "choch_per_100_steps": 1.96,
+      "ob_formations": 3344,
+      "ob_per_100_steps": 58.05,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3675,
+      "sweep_per_100_steps": 63.79,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1035,
+      "confluence_2of2_per_100_steps": 17.97
+    },
+    "confidence_impact": {
+      "steps_with_break": 3678,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3678,
+      "baseline_confluence_2of2_per_100_steps": 17.97,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 187394.2,
+        "detector_time_us_per_step": 32528.1
+      },
+      "ict": {
+        "new_formations": 656,
+        "new_formations_per_100_steps": 11.39,
+        "present_steps": 3659,
+        "present_per_100_steps": 63.51,
+        "avg_size_pct_of_price": 0.2312,
+        "avg_size_atr_multiple": 0.546,
+        "filled_count": 649,
+        "aged_out_count": 4,
+        "still_open_at_end": 3,
+        "filled_pct_of_lifecycle": 98.9,
+        "unfilled_pct_of_lifecycle": 0.5,
+        "aged_out_pct_of_lifecycle": 0.6,
+        "ob_overlap_count": 109,
+        "ob_overlap_pct_of_new_formations": 16.6,
+        "confluence_3of3_count": 134,
+        "confluence_3of3_per_100_steps": 2.33,
+        "detector_time_ms_total": 345765.9,
+        "detector_time_us_per_step": 60018.4
+      },
+      "wall_time_s": 593.17
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3678,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3678,
+        "min": 39,
+        "max": 71,
+        "mean": 61.05,
+        "median": 62.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3678,
+        "min": 41,
+        "max": 73,
+        "mean": 62.74,
+        "median": 64.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 879.73
+    }
+  },
+  "XAUUSDT": {
+    "symbol": "XAUUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 2994,
+      "bos_per_100_steps": 51.97,
+      "choch_events": 171,
+      "choch_per_100_steps": 2.97,
+      "ob_formations": 2930,
+      "ob_per_100_steps": 50.86,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3165,
+      "sweep_per_100_steps": 54.94,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1268,
+      "confluence_2of2_per_100_steps": 22.01
+    },
+    "confidence_impact": {
+      "steps_with_break": 3165,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3165,
+      "baseline_confluence_2of2_per_100_steps": 22.01,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 145823.6,
+        "detector_time_us_per_step": 25312.2
+      },
+      "ict": {
+        "new_formations": 344,
+        "new_formations_per_100_steps": 5.97,
+        "present_steps": 3071,
+        "present_per_100_steps": 53.31,
+        "avg_size_pct_of_price": 0.1474,
+        "avg_size_atr_multiple": 0.804,
+        "filled_count": 334,
+        "aged_out_count": 10,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": 97.1,
+        "unfilled_pct_of_lifecycle": 0.0,
+        "aged_out_pct_of_lifecycle": 2.9,
+        "ob_overlap_count": 39,
+        "ob_overlap_pct_of_new_formations": 11.3,
+        "confluence_3of3_count": 119,
+        "confluence_3of3_per_100_steps": 2.07,
+        "detector_time_ms_total": 222298.2,
+        "detector_time_us_per_step": 38586.7
+      },
+      "wall_time_s": 416.15
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3165,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3165,
+        "min": 42,
+        "max": 71,
+        "mean": 61.7,
+        "median": 63,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3165,
+        "min": 44,
+        "max": 73,
+        "mean": 63.38,
+        "median": 64,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 561.01
+    }
+  },
+  "XAGUSDT": {
+    "symbol": "XAGUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 2715,
+      "bos_per_100_steps": 47.13,
+      "choch_events": 221,
+      "choch_per_100_steps": 3.84,
+      "ob_formations": 2479,
+      "ob_per_100_steps": 43.03,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 2936,
+      "sweep_per_100_steps": 50.96,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1051,
+      "confluence_2of2_per_100_steps": 18.24
+    },
+    "confidence_impact": {
+      "steps_with_break": 2936,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 2936,
+      "baseline_confluence_2of2_per_100_steps": 18.24,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 170289.7,
+        "detector_time_us_per_step": 29559.1
+      },
+      "ict": {
+        "new_formations": 480,
+        "new_formations_per_100_steps": 8.33,
+        "present_steps": 2811,
+        "present_per_100_steps": 48.79,
+        "avg_size_pct_of_price": 0.241,
+        "avg_size_atr_multiple": 0.628,
+        "filled_count": 467,
+        "aged_out_count": 11,
+        "still_open_at_end": 2,
+        "filled_pct_of_lifecycle": 97.3,
+        "unfilled_pct_of_lifecycle": 0.4,
+        "aged_out_pct_of_lifecycle": 2.3,
+        "ob_overlap_count": 58,
+        "ob_overlap_pct_of_new_formations": 12.1,
+        "confluence_3of3_count": 277,
+        "confluence_3of3_per_100_steps": 4.81,
+        "detector_time_ms_total": 288444.0,
+        "detector_time_us_per_step": 50068.4
+      },
+      "wall_time_s": 528.01
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 2936,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 2936,
+        "min": 44,
+        "max": 71,
+        "mean": 60.82,
+        "median": 62.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 2936,
+        "min": 44,
+        "max": 73,
+        "mean": 62.5,
+        "median": 64.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 568.93
+    }
+  },
+  "CLUSDT": {
+    "symbol": "CLUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3274,
+      "bos_per_100_steps": 56.83,
+      "choch_events": 118,
+      "choch_per_100_steps": 2.05,
+      "ob_formations": 3070,
+      "ob_per_100_steps": 53.29,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3392,
+      "sweep_per_100_steps": 58.88,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1040,
+      "confluence_2of2_per_100_steps": 18.05
+    },
+    "confidence_impact": {
+      "steps_with_break": 3392,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3392,
+      "baseline_confluence_2of2_per_100_steps": 18.05,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 146576.0,
+        "detector_time_us_per_step": 25442.8
+      },
+      "ict": {
+        "new_formations": 565,
+        "new_formations_per_100_steps": 9.81,
+        "present_steps": 3346,
+        "present_per_100_steps": 58.08,
+        "avg_size_pct_of_price": 0.247,
+        "avg_size_atr_multiple": 0.583,
+        "filled_count": 550,
+        "aged_out_count": 11,
+        "still_open_at_end": 4,
+        "filled_pct_of_lifecycle": 97.3,
+        "unfilled_pct_of_lifecycle": 0.7,
+        "aged_out_pct_of_lifecycle": 1.9,
+        "ob_overlap_count": 61,
+        "ob_overlap_pct_of_new_formations": 10.8,
+        "confluence_3of3_count": 132,
+        "confluence_3of3_per_100_steps": 2.29,
+        "detector_time_ms_total": 257888.9,
+        "detector_time_us_per_step": 44764.6
+      },
+      "wall_time_s": 456.25
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3392,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3392,
+        "min": 40,
+        "max": 70,
+        "mean": 61.54,
+        "median": 63.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3392,
+        "min": 41,
+        "max": 73,
+        "mean": 63.18,
+        "median": 64.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 594.62
+    }
+  },
+  "BZUSDT": {
+    "symbol": "BZUSDT",
+    "candles_loaded": 6260,
+    "frequency": {
+      "steps": 5761,
+      "bos_events": 3469,
+      "bos_per_100_steps": 60.22,
+      "choch_events": 95,
+      "choch_per_100_steps": 1.65,
+      "ob_formations": 3227,
+      "ob_per_100_steps": 56.01,
+      "fvg_new_formations": 0,
+      "fvg_new_per_100_steps": 0.0,
+      "fvg_present_steps": 0,
+      "fvg_present_per_100_steps": 0.0,
+      "sweep_events": 3550,
+      "sweep_per_100_steps": 61.62,
+      "confluence_3of3_steps": 0,
+      "confluence_3of3_per_100_steps": 0.0,
+      "confluence_2of2_steps": 1460,
+      "confluence_2of2_per_100_steps": 25.34
+    },
+    "confidence_impact": {
+      "steps_with_break": 3564,
+      "current_rule": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      },
+      "candidate_rule_additional_signals": {
+        "signal_count": 0,
+        "wins": 0,
+        "losses": 0,
+        "unresolved": 0,
+        "win_rate_pct": null
+      }
+    },
+    "fvg_algorithm_comparison": {
+      "steps": 5761,
+      "break_steps": 3564,
+      "baseline_confluence_2of2_per_100_steps": 25.34,
+      "current": {
+        "new_formations": 0,
+        "new_formations_per_100_steps": 0.0,
+        "present_steps": 0,
+        "present_per_100_steps": 0.0,
+        "avg_size_pct_of_price": null,
+        "avg_size_atr_multiple": null,
+        "filled_count": 0,
+        "aged_out_count": 0,
+        "still_open_at_end": 0,
+        "filled_pct_of_lifecycle": null,
+        "unfilled_pct_of_lifecycle": null,
+        "aged_out_pct_of_lifecycle": null,
+        "ob_overlap_count": 0,
+        "ob_overlap_pct_of_new_formations": null,
+        "confluence_3of3_count": 0,
+        "confluence_3of3_per_100_steps": 0.0,
+        "detector_time_ms_total": 156529.7,
+        "detector_time_us_per_step": 27170.6
+      },
+      "ict": {
+        "new_formations": 561,
+        "new_formations_per_100_steps": 9.74,
+        "present_steps": 3517,
+        "present_per_100_steps": 61.05,
+        "avg_size_pct_of_price": 0.2391,
+        "avg_size_atr_multiple": 0.601,
+        "filled_count": 544,
+        "aged_out_count": 12,
+        "still_open_at_end": 5,
+        "filled_pct_of_lifecycle": 97.0,
+        "unfilled_pct_of_lifecycle": 0.9,
+        "aged_out_pct_of_lifecycle": 2.1,
+        "ob_overlap_count": 58,
+        "ob_overlap_pct_of_new_formations": 10.3,
+        "confluence_3of3_count": 178,
+        "confluence_3of3_per_100_steps": 3.09,
+        "detector_time_ms_total": 273916.8,
+        "detector_time_us_per_step": 47546.7
+      },
+      "wall_time_s": 481.66
+    },
+    "fvg_confidence_distribution": {
+      "steps_with_break": 3564,
+      "min_confidence_threshold": 85,
+      "current": {
+        "count": 3564,
+        "min": 42,
+        "max": 71,
+        "mean": 61.55,
+        "median": 62.0,
+        "steps_passing_min_confidence": 0
+      },
+      "ict": {
+        "count": 3564,
+        "min": 43,
+        "max": 73,
+        "mean": 63.08,
+        "median": 64.0,
+        "steps_passing_min_confidence": 0
+      },
+      "wall_time_s": 622.55
+    }
+  }
+}

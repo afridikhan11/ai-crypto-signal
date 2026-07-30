@@ -28,6 +28,17 @@ class Settings(BaseSettings):
         alias="ACCESS_TOKEN_EXPIRE_MINUTES",
     )
 
+    # Off by default so today's dev setup (WPF app calling the API with no
+    # Authorization header) keeps working unchanged - see app/core/security.py
+    # and app/api/dependencies.py. .env.production.example turns this on;
+    # flipping it on requires ADMIN_USERNAME/ADMIN_PASSWORD_HASH to be set
+    # (via scripts/generate_password_hash.py) and, if the WPF app is meant to
+    # keep working, wiring a login step into it - see the auth module's
+    # docstring for that follow-up.
+    require_auth: bool = Field(default=False, alias="REQUIRE_AUTH")
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password_hash: str = Field(default="", alias="ADMIN_PASSWORD_HASH")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

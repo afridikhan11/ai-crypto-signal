@@ -14,3 +14,7 @@ pandas==2.2.3
 ta==0.11.0
 websockets==14.1
 loguru==0.7.3
+cryptography==44.0.0
+pyjwt==2.13.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20

@@ -13,6 +13,7 @@
     <Grid Margin="24,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -47,7 +48,275 @@
                     VerticalAlignment="Top" />
         </Grid>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <!-- ===== Auto Trading Control Panel (2026-07-30) =====
+             Pure control/visualization surface: every button below calls
+             exactly one real backend endpoint in
+             app/api/v1/endpoints/trading_control.py - no trading decision,
+             no bulk-action loop, and no ICT/AI/Scanner logic lives in this
+             app. See AutoTradingViewModel's class-level doc comment. -->
+        <Border Grid.Row="1" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                Padding="20" Margin="0,0,0,16" VerticalAlignment="Top">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                    <materialDesign:PackIcon Kind="ShieldAccountOutline" Width="18" Height="18"
+                                             Foreground="{DynamicResource AccentBrush}" />
+                    <TextBlock Text="Auto Trading Control Panel" FontSize="15" FontWeight="SemiBold"
+                               Margin="10,0,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ControlStatusMessage}" FontSize="12"
+                               Foreground="{DynamicResource SuccessBrush}" Margin="16,0,0,0"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ControlErrorMessage}" FontSize="12"
+                               Foreground="#FF5252" Margin="16,0,0,0"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- Status chips -->
+                <UniformGrid Columns="6" Margin="0,0,0,16">
+                    <StackPanel Margin="0,0,10,0">
+                        <TextBlock Text="Trading Status" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Ellipse Width="9" Height="9" Fill="{Binding TradingStatus.TradingStatusColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding TradingStatus.TradingStatusLabel}" FontSize="13" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,10,0">
+                        <TextBlock Text="Binance Status" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Ellipse Width="9" Height="9" Fill="{Binding TradingStatus.BinanceStatusColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding TradingStatus.BinanceStatusLabel}" FontSize="13" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,10,0">
+                        <TextBlock Text="AI Status" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Ellipse Width="9" Height="9" Fill="{Binding TradingStatus.AiStatusColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding TradingStatus.AiStatusLabel}" FontSize="13" FontWeight="SemiBold" Margin="8,0,0,0"
+                                       ToolTip="{Binding TradingStatus.AiStatusMessage}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,10,0">
+                        <TextBlock Text="Scanner Status" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Ellipse Width="9" Height="9" Fill="{Binding TradingStatus.ScannerStatusColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding TradingStatus.ScannerStatusLabel}" FontSize="13" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,10,0">
+                        <TextBlock Text="Risk Engine Status" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Ellipse Width="9" Height="9" Fill="{Binding TradingStatus.RiskEngineStatusColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding TradingStatus.RiskEngineStatusLabel}" FontSize="13" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Auto Trading" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Ellipse Width="9" Height="9" Fill="{Binding TradingStatus.AutoTradingColor}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding TradingStatus.AutoTradingLabel}" FontSize="13" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </UniformGrid>
+
+                <!-- Metric cards -->
+                <UniformGrid Columns="6" Margin="0,0,0,16">
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Daily PnL" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.DailyPnlDisplay}" FontSize="16" FontWeight="Bold"
+                                       Foreground="{Binding TradingStatus.DailyPnlColor}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Win Rate" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.WinRateDisplay}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Active Trades" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.ActiveTrades}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Pending Signals" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.PendingSignals}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <!-- ICT Pending Limit Entry (2026-07-30): entries ARMED with a real
+                         LIMIT order resting on Binance, waiting for price to reach the
+                         ICT zone. Not yet a position - deliberately separate from both
+                         Pending Signals and Active Trades. -->
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Armed ICT Entries" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.PendingEntries}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                            <TextBlock Text="{Binding TradingStatus.PendingEntriesDisplay}" FontSize="10"
+                                       Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Entry Model" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.EntryModeLabel}" FontSize="16" FontWeight="Bold"
+                                       Foreground="{Binding TradingStatus.EntryModeColor}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Margin="0,0,10,0" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Executed Signals" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.ExecutedSignals}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Portfolio Open Risk" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                            <TextBlock Text="{Binding TradingStatus.PortfolioOpenRiskDisplay}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <!-- Risk Limits + Session readout -->
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="14" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="Risk Limits (configured in RiskEngine)" FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
+                            <UniformGrid Columns="5">
+                                <StackPanel>
+                                    <TextBlock Text="Max Risk / Trade" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock Text="{Binding TradingStatus.RiskLimits.MaxRiskPercentPerTrade, StringFormat={}{0}%}" FontSize="14" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Max Open Risk" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock Text="{Binding TradingStatus.RiskLimits.MaxOpenRiskPercent, StringFormat={}{0}%}" FontSize="14" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Max Daily Loss" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock Text="{Binding TradingStatus.RiskLimits.MaxDailyLossPercent, StringFormat={}{0}%}" FontSize="14" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Max Exposure" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock Text="{Binding TradingStatus.RiskLimits.MaxExposurePercent, StringFormat={}{0}%}" FontSize="14" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Max Drawdown" FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock Text="{Binding TradingStatus.RiskLimits.MaxDrawdownPercent, StringFormat={}{0}%}" FontSize="14" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="14">
+                        <StackPanel>
+                            <TextBlock FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}">
+                                <Run Text="Session (" /><Run Text="{Binding TradingStatus.Session.ReferenceSymbol, Mode=OneWay}" /><Run Text=", read-only)" />
+                            </TextBlock>
+                            <TextBlock Text="{Binding TradingStatus.Session.Display}" FontSize="14" FontWeight="SemiBold"
+                                       Margin="0,4,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Asset / Timeframe Selection - real filters on GET /signals -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                    <StackPanel Margin="0,0,20,0">
+                        <TextBlock Text="Asset" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,4" />
+                        <ComboBox Width="140" ItemsSource="{Binding AssetFilterOptions}"
+                                  SelectedItem="{Binding SelectedAssetFilter}" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Timeframe" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,4" />
+                        <ComboBox Width="140" ItemsSource="{Binding TimeframeFilterOptions}"
+                                  SelectedItem="{Binding SelectedTimeframeFilter}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Controls -->
+                <WrapPanel>
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38"
+                            Background="{Binding TradingStatus.AutoTradingColor}" BorderThickness="0" Foreground="White"
+                            Cursor="Hand" IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding ToggleAutoTradingCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="PowerPlug" Width="16" Height="16" VerticalAlignment="Center" />
+                            <TextBlock Margin="8,0,0,0" FontWeight="SemiBold" VerticalAlignment="Center">
+                                <Run Text="Auto Trading: " /><Run Text="{Binding TradingStatus.AutoTradingLabel, Mode=OneWay}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Style="{StaticResource PrimaryButton}"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding StartEngineCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Play" Width="16" Height="16" VerticalAlignment="Center" Foreground="White" />
+                            <TextBlock Text="Start" Margin="8,0,0,0" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Background="#FFC107" BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding PauseEngineCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Pause" Width="16" Height="16" VerticalAlignment="Center" Foreground="Black" />
+                            <TextBlock Text="Pause" Margin="8,0,0,0" Foreground="Black" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Background="#616161" BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding StopEngineCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Stop" Width="16" Height="16" VerticalAlignment="Center" Foreground="White" />
+                            <TextBlock Text="Stop" Margin="8,0,0,0" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Background="#29B6F6" BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding ResumeEngineCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="PlayCircleOutline" Width="16" Height="16" VerticalAlignment="Center" Foreground="White" />
+                            <TextBlock Text="Resume" Margin="8,0,0,0" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Background="#FF5252" BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding CloseAllPositionsCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="CloseCircleOutline" Width="16" Height="16" VerticalAlignment="Center" Foreground="White" />
+                            <TextBlock Text="Close All Positions" Margin="8,0,0,0" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Background="#FF5252" BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding CancelAllOrdersCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="MinusCircleOutline" Width="16" Height="16" VerticalAlignment="Center" Foreground="White" />
+                            <TextBlock Text="Cancel Pending Orders" Margin="8,0,0,0" Foreground="White" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Margin="0,0,10,10" Padding="16,0" Height="38" Background="#B71C1C" BorderThickness="0" Cursor="Hand"
+                            IsEnabled="{Binding IsControlActionRunning, Converter={StaticResource InverseBooleanConverter}}"
+                            Command="{Binding KillSwitchCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="AlertOctagonOutline" Width="16" Height="16" VerticalAlignment="Center" Foreground="White" />
+                            <TextBlock Text="EMERGENCY KILL SWITCH" Margin="8,0,0,0" Foreground="White" FontWeight="Bold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <StackPanel>
 
                 <!-- ===== Balance cards (Binance-style) ===== -->
@@ -270,6 +539,23 @@
                                     <DataGridTextColumn Header="Locked" Binding="{Binding Locked, StringFormat=N8}" Width="*" />
                                     <DataGridTextColumn Header="Total" Binding="{Binding Total, StringFormat=N8}" Width="*" />
                                     <DataGridTextColumn Header="Value (USDT)" Binding="{Binding ValueUsdt, StringFormat=N2}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="Trading Logs">
+                            <!-- Backed by GET /trading/logs (in-memory ring buffer over the
+                                 same Loguru output already written to stdout/logs/*.log - see
+                                 app/core/log_buffer.py). Polled every 5s while this screen is open. -->
+                            <DataGrid ItemsSource="{Binding LogEntries}" Margin="16"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="28"
+                                      HeadersVisibility="Column" MaxHeight="320">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="1.4*" />
+                                    <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="0.7*" />
+                                    <DataGridTextColumn Header="Logger" Binding="{Binding Logger}" Width="1.4*" />
+                                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="4*" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </TabItem>
