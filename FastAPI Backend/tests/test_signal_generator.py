@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-PROJECT_ROOT = Path("/sessions/eloquent-gracious-goodall/mnt/ai-crypto-signal/FastAPI Backend")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_real_default_weights() -> dict:

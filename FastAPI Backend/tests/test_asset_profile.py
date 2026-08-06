@@ -36,7 +36,7 @@ from app.core.constants import (
 )
 from app.smc.session_engine import KillZone, Session, SessionEngine
 
-BACKEND_ROOT = Path("/sessions/eloquent-gracious-goodall/mnt/ai-crypto-signal/FastAPI Backend")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestResolution:

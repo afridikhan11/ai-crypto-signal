@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-BACKEND_ROOT = Path("/sessions/eloquent-gracious-goodall/mnt/ai-crypto-signal/FastAPI Backend")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = BACKEND_ROOT / "app"
 
 # Packages that make up the production Universal ICT path. Nothing in here

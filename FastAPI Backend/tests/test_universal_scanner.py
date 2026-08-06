@@ -25,7 +25,7 @@ from app.scheduler.universal_scanner import (
 )
 from app.strategy.signal_generator import SignalGenerator
 
-BACKEND_ROOT = Path("/sessions/eloquent-gracious-goodall/mnt/ai-crypto-signal/FastAPI Backend")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "XAUUSDT", "CLUSDT"]
 
 
