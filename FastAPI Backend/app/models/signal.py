@@ -23,7 +23,9 @@ class SignalStatus(str, enum.Enum):
 class Signal(Base, TimestampMixin):
     __tablename__ = "signals"
 
-    coin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("coins.id"), nullable=False)
+    coin_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("coins.id"), nullable=False, index=True
+    )
     direction: Mapped[Direction] = mapped_column(SQLEnum(Direction), nullable=False)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
@@ -34,7 +36,7 @@ class Signal(Base, TimestampMixin):
     confidence: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(500))
     status: Mapped[SignalStatus] = mapped_column(
-        SQLEnum(SignalStatus), default=SignalStatus.ACTIVE
+        SQLEnum(SignalStatus), default=SignalStatus.ACTIVE, index=True
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timeframe: Mapped[str] = mapped_column(String(10), default="15m")

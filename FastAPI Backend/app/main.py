@@ -19,37 +19,45 @@ async def lifespan(app: FastAPI):
     # ---- startup ----
     logger.info("Starting application...")
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if settings.auto_create_tables:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    from app.scheduler.scanner import CryptoScanner
-    from app.scheduler.signal_tracker import SignalTracker
+    app.state.scanner = None
+    app.state.scanner_task = None
+    app.state.tracker = None
 
-    scanner = CryptoScanner()
-    app.state.scanner = scanner
+    if settings.run_scanner:
+        from app.scheduler.scanner import CryptoScanner
+        from app.scheduler.signal_tracker import SignalTracker
 
-    scanner_task = asyncio.create_task(scanner.start())
-    app.state.scanner_task = scanner_task
+        scanner = CryptoScanner()
+        app.state.scanner = scanner
+        scanner_task = asyncio.create_task(scanner.start())
+        app.state.scanner_task = scanner_task
 
-    def scanner_done(task: asyncio.Task):
-        try:
-            if task.exception():
-                logger.exception(f"Scanner task failed: {task.exception()}")
-        except asyncio.CancelledError:
-            logger.info("Scanner task cancelled.")
+        def scanner_done(task: asyncio.Task):
+            try:
+                if task.exception():
+                    logger.exception(f"Scanner task failed: {task.exception()}")
+            except asyncio.CancelledError:
+                logger.info("Scanner task cancelled.")
 
-    scanner_task.add_done_callback(scanner_done)
+        scanner_task.add_done_callback(scanner_done)
 
-    tracker = None
-    if settings.tracker_enabled:
-        tracker = SignalTracker(
-            scanner.data_manager, interval_seconds=settings.tracker_interval_seconds
-        )
-        tracker.start()
-    app.state.tracker = tracker
+        if settings.tracker_enabled:
+            tracker = SignalTracker(
+                scanner.data_manager,
+                interval_seconds=settings.tracker_interval_seconds,
+            )
+            tracker.start()
+            app.state.tracker = tracker
+        logger.info("Scanner and tracker started (in-process).")
+    else:
+        logger.info("RUN_SCANNER=false — API-only mode; engine runs separately.")
 
     await signal_ws_manager.start_listener()
-    logger.info("Scanner, tracker and WebSocket listener started.")
+    logger.info("WebSocket listener started.")
 
     yield
 
@@ -58,14 +66,14 @@ async def lifespan(app: FastAPI):
     if getattr(app.state, "tracker", None):
         await app.state.tracker.stop()
 
-    if hasattr(app.state, "scanner_task"):
+    if getattr(app.state, "scanner_task", None):
         app.state.scanner_task.cancel()
         try:
             await app.state.scanner_task
         except asyncio.CancelledError:
             pass
 
-    if hasattr(app.state, "scanner"):
+    if getattr(app.state, "scanner", None):
         await app.state.scanner.stop()
 
     await signal_ws_manager.stop_listener()

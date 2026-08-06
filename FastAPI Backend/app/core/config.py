@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     tracker_enabled: bool = Field(default=True, alias="TRACKER_ENABLED")
     tracker_interval_seconds: int = Field(default=15, alias="TRACKER_INTERVAL_SECONDS")
 
+    # ------------------------------------------------------------------
+    # Process topology / migrations
+    # ------------------------------------------------------------------
+    # When False, the FastAPI app serves the API only (no scanner/tracker), so
+    # it can be scaled to multiple workers. Run the background engine separately
+    # via ``python -m app.worker``. When True (default) a single combined
+    # process runs everything (simplest deployment).
+    run_scanner: bool = Field(default=True, alias="RUN_SCANNER")
+    # Create tables on startup (zero-config dev). Set False in production and
+    # manage schema with Alembic migrations.
+    auto_create_tables: bool = Field(default=True, alias="AUTO_CREATE_TABLES")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

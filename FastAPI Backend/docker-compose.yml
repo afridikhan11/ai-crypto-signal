@@ -1,34 +1,63 @@
-
+# Production base stack. For local development, docker compose automatically
+# merges docker-compose.override.yml (hot-reload + source mount).
+#
+#   Combined single-process deployment (default): the `app` service runs the
+#   API + scanner + tracker together.
+#
+#   Scaled deployment: set RUN_SCANNER=false for `app`, scale it, and run the
+#   dedicated `worker` service (uncomment below) as a single instance.
 
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: crypto_signals
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-crypto_signals}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   app:
     build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
+    restart: unless-stopped
+
+  # Dedicated background engine — enable when scaling `app` (RUN_SCANNER=false).
+  # worker:
+  #   build: .
+  #   command: python -m app.worker
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   restart: unless-stopped
 
 volumes:
   postgres_data:

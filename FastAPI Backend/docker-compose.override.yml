@@ -1,0 +1,10 @@
+# Development overrides — automatically merged by `docker compose up`.
+# Mounts the source tree and enables hot-reload. Do NOT use in production.
+
+services:
+  app:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+    environment:
+      DEBUG: "true"
