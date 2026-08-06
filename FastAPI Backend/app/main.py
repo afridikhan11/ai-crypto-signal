@@ -8,7 +8,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.logging import logger
-from app.models.base import Base
 from app.core.database import engine
 from app.websocket.signal_ws import signal_ws_manager
 import asyncio
@@ -152,151 +151,37 @@ async def on_startup():
     RiskLimits().assert_coherent()
     logger.info("Risk limit coherence check passed.")
 
-    # Import the newer models so `create_all()` knows about their tables on
-    # a fresh database. Alembic owns schema EVOLUTION (see alembic/versions);
-    # this only covers the first-run "table does not exist at all" case, the
-    # same role create_all() has always played here.
-    from app.models import equity_snapshot as _equity_snapshot  # noqa: F401
-    from app.models import risk_assessment as _risk_assessment  # noqa: F401
+    # ------------------------------------------------------------------
+    # SCHEMA OWNERSHIP (2026-07-31)
+    #
+    # ALEMBIC IS THE SINGLE OWNER OF THE DATABASE SCHEMA. This process
+    # performs NO DDL of any kind. Migrations run from the container
+    # command (`alembic upgrade head && uvicorn ...`) before this process
+    # starts serving, and a failed migration stops the container rather
+    # than letting the app come up against a half-migrated database.
+    #
+    # The pre-Alembic in-process bootstrap (`create_all()` plus ~15
+    # hand-written ALTER TABLE / ALTER TYPE statements) has been moved
+    # intact to app/core/legacy_schema_bootstrap.py, where it is
+    # quarantined behind DB_AUTO_BOOTSTRAP and refuses to run while that
+    # flag is False. Two owners of one schema is exactly why
+    # `alembic_version` never existed: the app kept building its own
+    # schema, so Alembic was never invoked and had nothing to record.
+    # ------------------------------------------------------------------
+    if settings.db_auto_bootstrap:
+        logger.warning(
+            "DB_AUTO_BOOTSTRAP is enabled - this process will create/alter "
+            "schema directly, BYPASSING Alembic. Never enable this against a "
+            "database Alembic manages."
+        )
+        from app.core.legacy_schema_bootstrap import run_legacy_schema_bootstrap
+        await run_legacy_schema_bootstrap()
+    else:
+        logger.info(
+            "Schema bootstrap skipped - Alembic owns the schema "
+            "(`alembic upgrade head` runs from the container command)."
+        )
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # create_all() only creates missing tables, it never ALTERs an
-        # existing one - this project has no Alembic migrations set up, so
-        # new columns on existing tables need this lightweight, idempotent
-        # bootstrap instead. Safe to run on every startup.
-        try:
-            from sqlalchemy import text
-            await conn.execute(text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS score_breakdown JSON"
-            ))
-        except Exception as e:
-            logger.warning(f"score_breakdown column bootstrap skipped: {e}")
-
-        try:
-            from sqlalchemy import text
-            await conn.execute(text(
-                "ALTER TABLE coins ADD COLUMN IF NOT EXISTS asset_class VARCHAR(20) NOT NULL DEFAULT 'crypto'"
-            ))
-        except Exception as e:
-            logger.warning(f"asset_class column bootstrap skipped: {e}")
-
-        try:
-            from sqlalchemy import text
-            await conn.execute(text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS executed BOOLEAN NOT NULL DEFAULT false"
-            ))
-            await conn.execute(text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS executed_order_id VARCHAR(50)"
-            ))
-            await conn.execute(text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS executed_at TIMESTAMPTZ"
-            ))
-            await conn.execute(text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS executed_environment VARCHAR(10)"
-            ))
-        except Exception as e:
-            logger.warning(f"Auto Trading execution columns bootstrap skipped: {e}")
-
-        # One-time collapse of TP1/TP2/TP3 -> single take_profit, and the
-        # TP1_HIT/TP2_HIT/TP3_HIT status values -> single TP_HIT (see
-        # app/models/signal.py). Guarded on take_profit_2 still existing so
-        # this whole block only ever runs once, even though this dev
-        # instance restarts on every code reload.
-        try:
-            from sqlalchemy import text
-            still_has_old_columns = (await conn.execute(text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'signals' AND column_name = 'take_profit_2'"
-            ))).first()
-
-            if still_has_old_columns is not None:
-                await conn.execute(text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS take_profit DOUBLE PRECISION"))
-                await conn.execute(text(
-                    "UPDATE signals SET take_profit = take_profit_1 WHERE take_profit IS NULL"
-                ))
-                await conn.execute(text(
-                    "UPDATE signals SET status = 'TP1_HIT' WHERE status::text IN ('TP2_HIT', 'TP3_HIT')"
-                ))
-                await conn.execute(text("ALTER TYPE signalstatus RENAME TO signalstatus_old"))
-                await conn.execute(text("CREATE TYPE signalstatus AS ENUM ('ACTIVE', 'TP_HIT', 'STOPPED', 'CANCELLED')"))
-                await conn.execute(text("ALTER TABLE signals ALTER COLUMN status DROP DEFAULT"))
-                await conn.execute(text(
-                    "ALTER TABLE signals ALTER COLUMN status TYPE signalstatus USING "
-                    "(CASE status::text WHEN 'TP1_HIT' THEN 'TP_HIT' ELSE status::text END)::signalstatus"
-                ))
-                await conn.execute(text("ALTER TABLE signals ALTER COLUMN status SET DEFAULT 'ACTIVE'"))
-                await conn.execute(text("DROP TYPE signalstatus_old"))
-                await conn.execute(text("ALTER TABLE signals DROP COLUMN take_profit_1"))
-                await conn.execute(text("ALTER TABLE signals DROP COLUMN take_profit_2"))
-                await conn.execute(text("ALTER TABLE signals DROP COLUMN take_profit_3"))
-                await conn.execute(text("ALTER TABLE signals ALTER COLUMN take_profit SET NOT NULL"))
-                logger.info("Migrated signals table: TP1/2/3 -> single take_profit, TPx_HIT -> TP_HIT.")
-        except Exception as e:
-            logger.warning(f"TP1/2/3 collapse migration skipped/failed: {e}")
-
-        # ---- ICT Pending Limit Entry (2026-07-30) - new columns ----
-        try:
-            from sqlalchemy import text
-            for ddl in (
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_type VARCHAR(20)",
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_zone_top DOUBLE PRECISION",
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_zone_bottom DOUBLE PRECISION",
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_expires_at TIMESTAMPTZ",
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS filled_at TIMESTAMPTZ",
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS actual_fill_price DOUBLE PRECISION",
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_order_id VARCHAR(50)",
-            ):
-                await conn.execute(text(ddl))
-        except Exception as e:
-            logger.warning(f"ICT pending-entry columns bootstrap skipped: {e}")
-
-        # ---- initial_stop_loss (2026-07-30) ----
-        # This column is owned by the Alembic migration
-        # alembic/versions/20260730_01_add_initial_stop_loss.py, which is the
-        # authoritative definition (add nullable -> backfill -> NOT NULL).
-        # The guarded statements below exist ONLY so a database that has not
-        # yet had `alembic upgrade head` run against it still boots with a
-        # usable column instead of failing every query with "column does not
-        # exist". They are byte-for-byte equivalent to the migration's own
-        # steps and are idempotent, so running the migration afterwards is a
-        # no-op rather than a conflict.
-        try:
-            from sqlalchemy import text
-            await conn.execute(text(
-                "ALTER TABLE signals ADD COLUMN IF NOT EXISTS initial_stop_loss DOUBLE PRECISION"
-            ))
-            await conn.execute(text(
-                "UPDATE signals SET initial_stop_loss = stop_loss WHERE initial_stop_loss IS NULL"
-            ))
-            await conn.execute(text(
-                "ALTER TABLE signals ALTER COLUMN initial_stop_loss SET NOT NULL"
-            ))
-        except Exception as e:
-            logger.warning(f"initial_stop_loss bootstrap skipped: {e}")
-
-    # ---- ICT Pending Limit Entry - new ENUM VALUES ----
-    # Deliberately OUTSIDE the transaction block above. `create_all()` never
-    # alters an existing type, and Postgres will not let a value added by
-    # `ALTER TYPE ... ADD VALUE` be USED in the same transaction that added
-    # it. Running each ADD VALUE in its own auto-committed connection (and
-    # before anything inserts a row carrying the new value) is what makes
-    # this safe and idempotent across restarts. IF NOT EXISTS requires
-    # PostgreSQL 12+, which this project's docker-compose Postgres image
-    # satisfies; the try/except keeps a startup on any other backend
-    # (e.g. SQLite in a test harness, which has no enum types at all) from
-    # failing here.
-    for enum_value in ("PENDING_ENTRY", "EXPIRED"):
-        try:
-            from sqlalchemy import text
-            async with engine.connect() as conn:
-                await conn.execution_options(isolation_level="AUTOCOMMIT")
-                await conn.execute(text(
-                    f"ALTER TYPE signalstatus ADD VALUE IF NOT EXISTS '{enum_value}'"
-                ))
-            logger.info(f"signalstatus enum value '{enum_value}' present.")
-        except Exception as e:
-            logger.warning(f"signalstatus enum bootstrap for '{enum_value}' skipped: {e}")
 
     from app.ai.calibration import calibrate_weights, calibrate_all_profiles
     try:

@@ -26,12 +26,32 @@ services:
     # production deployment should not expose the database directly.
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1 forces a TCP check. Without it pg_isready uses the
+      # unix socket, which the TEMPORARY server the postgres image runs
+      # during initdb also answers while accepting no TCP connections at
+      # all (it sets listen_addresses=''). A socket-only check reports
+      # healthy while the app's connection to db:5432 is still refused.
+      #
+      # $$ escapes to a single $ so the variable is expanded inside the db
+      # container, where POSTGRES_USER/POSTGRES_DB are set.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     logging: *default-logging
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     # Same reasoning as db above - internal only in production.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     logging: *default-logging
     restart: unless-stopped
 
@@ -46,7 +66,12 @@ services:
     # independent scanners generating duplicate signals against the same
     # symbols. Scale this app vertically (bigger machine), not by adding
     # uvicorn workers, unless that coordination is built first.
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    # Server arguments ONLY. Waiting for PostgreSQL and running
+    # `alembic upgrade head` happen in the image's ENTRYPOINT
+    # (scripts/docker-entrypoint.sh), which a `command:` override cannot
+    # bypass. Previously this line carried the migration itself, so any
+    # edit to it could silently drop the migration step.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     # No bind-mount of source - production runs the code baked into the
     # image at build time, not a live view of the host filesystem.
     # logs/ IS mounted as a named volume (2026-07-27 addition) so loguru's
@@ -58,11 +83,34 @@ services:
     # worked before this change and is unaffected by it.
     volumes:
       - app_logs:/app/logs
+      # data/ MUST live outside the image (2026-07-31). Two reasons:
+      #
+      # SECRETS - data/binance_credentials.enc holds the encrypted exchange
+      # API keys. .dockerignore now excludes it from the build context, so
+      # the image contains no credentials; the operator places the file on
+      # the host and it is mounted in. Baking keys into an image puts them
+      # in every layer, every registry copy and every `docker save`.
+      #
+      # CONTROL-PLANE STATE - data/trading_settings.json holds
+      # engine_run_state, auto-trading on/off and entry_mode, and is
+      # WRITTEN AT RUNTIME. Without this mount those writes went to the
+      # container's ephemeral filesystem, so every redeploy silently
+      # reverted the trading control plane to whatever was baked into the
+      # image - including re-enabling Auto Trading after a deliberate stop.
+      - ./data:/app/data
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      # service_started only waits for the container to exist, not for
+      # PostgreSQL inside it to accept connections. That is what produced
+      # `ConnectionRefusedError: Connect call failed ('db', 5432)`.
+      # `restart: unless-stopped` on db means it can also bounce while the
+      # app is already running - Compose does not re-gate on that, which is
+      # why scripts/wait_for_db.py exists in the image as well.
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env.production
     logging: *default-logging

@@ -1,6 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ===================================================================
+# OBSOLETE - DISABLED 2026-07-31. DO NOT RUN.
+# ===================================================================
+# This is the original one-shot scaffolding script for Module 2. It is
+# kept for historical reference only.
+#
+# Running it now would be DESTRUCTIVE. It does `cat > app/main.py`, so
+# it overwrites the current application entrypoint with a 2024 version
+# that starts `CryptoScanner` - a class this codebase deliberately no
+# longer has (see tests/test_legacy_isolation.py, which asserts there
+# is exactly one scanner and that it is UniversalScanner). The app
+# would not start.
+#
+# It is also one of only two places in this repository outside
+# alembic/ that contain `Base.metadata.create_all()`. Alembic is now
+# the single owner of the database schema (see
+# app/core/legacy_schema_bootstrap.py); re-generating a main.py that
+# creates its own schema would reintroduce exactly the divergence that
+# left `alembic_version` missing.
+#
+# To scaffold a fresh copy of this project, clone the repository and
+# run `alembic upgrade head`. Delete the guard below only if you have
+# read every heredoc in this file and genuinely intend to overwrite
+# your working tree.
+# ===================================================================
+echo "REFUSING TO RUN: setup_module2.sh is obsolete scaffolding and would" >&2
+echo "overwrite app/main.py with a pre-Alembic version that starts the" >&2
+echo "deleted CryptoScanner. See the comment block at the top of this file." >&2
+exit 1
+
 # -------------------------------------------------------------------
 # AI Crypto Signal System – Module 2 Setup Script
 # Smart Money Concept Engine, Indicators, AI Scorer, Live Scanner

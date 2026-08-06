@@ -136,6 +136,11 @@ class UniversalScanner:
 
         self._running = False
         self._symbol_locks = {symbol: asyncio.Lock() for symbol in self.symbols}
+        # Strong references to the long-lived market-data tasks. Declared
+        # here (not only in start()) so stop() is safe to call on a scanner
+        # that was constructed but never started.
+        self._ws_task: Optional[asyncio.Task] = None
+        self._liquidation_task: Optional[asyncio.Task] = None
 
         logger.info(
             "UniversalScanner initialised for {} symbols across profiles: {}",
@@ -207,12 +212,72 @@ class UniversalScanner:
         self.data_manager.set_on_candle_callback(self.on_new_candle)
         self._running = True
 
-        asyncio.create_task(self.data_manager.start_websocket())
-        asyncio.create_task(self.data_manager.start_liquidation_stream())
+        # MARKET-DATA TASKS - held, supervised, and cancelled on stop.
+        #
+        # These were previously bare `asyncio.create_task(...)` calls whose
+        # results were discarded. Two real hazards, both silent:
+        #
+        #   1. asyncio holds only a WEAK reference to a running task. A task
+        #      with no strong reference anywhere can be garbage-collected
+        #      mid-flight ("Task was destroyed but it is pending!").
+        #   2. If either coroutine raises above its own retry loop, the
+        #      exception is swallowed into the unretrieved task result and
+        #      nothing logs it.
+        #
+        # Either way the candle stream stops while the scanner keeps
+        # running. `get_dataframe()` deliberately returns the last cached
+        # frame "even if stale" (binance_service.py), so the scanner would
+        # go on generating signals from FROZEN PRICES with no error
+        # anywhere - a trading-correctness failure, not just a reliability
+        # one. Holding the references and attaching done-callbacks makes a
+        # dead stream loud and prevents the GC case entirely.
+        self._ws_task = asyncio.create_task(self.data_manager.start_websocket())
+        self._liquidation_task = asyncio.create_task(
+            self.data_manager.start_liquidation_stream()
+        )
+        for name, task in (
+            ("market data websocket", self._ws_task),
+            ("liquidation stream", self._liquidation_task),
+        ):
+            task.add_done_callback(
+                lambda t, _name=name: self._market_data_task_done(_name, t)
+            )
         logger.info("Universal scanner started.")
+
+    @staticmethod
+    def _market_data_task_done(name: str, task: asyncio.Task) -> None:
+        """Surface the death of a market-data task instead of swallowing it.
+
+        A completed task here is ALWAYS notable: both coroutines are meant
+        to run for the lifetime of the process. Normal shutdown cancels
+        them, which is the only non-alarming outcome.
+        """
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            logger.info(f"{name} task cancelled (normal shutdown).")
+            return
+        if exc is not None:
+            logger.exception(
+                f"{name} task DIED: {exc!r}. Candle data is no longer "
+                f"updating; any signal generated from here on would use "
+                f"stale prices. Restart the scanner."
+            )
+        else:
+            logger.error(
+                f"{name} task returned unexpectedly with no exception. It is "
+                f"meant to run for the process lifetime; market data is no "
+                f"longer updating."
+            )
 
     async def stop(self):
         self._running = False
+        # Cancel before closing the data manager so neither task is left
+        # awaiting a socket that is being torn down underneath it.
+        for task in (getattr(self, "_ws_task", None),
+                     getattr(self, "_liquidation_task", None)):
+            if task is not None and not task.done():
+                task.cancel()
         await self.data_manager.stop()
         await self.fundamentals.close()
         await self.macro_fundamentals.close()

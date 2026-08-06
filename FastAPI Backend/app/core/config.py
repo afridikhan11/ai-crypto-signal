@@ -9,6 +9,18 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, alias="DEBUG")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    # SCHEMA OWNERSHIP (2026-07-31). Alembic is the single owner of the
+    # database schema; `alembic upgrade head` runs from the container
+    # command before uvicorn starts. This flag re-enables the quarantined
+    # legacy bootstrap in app/core/legacy_schema_bootstrap.py
+    # (`Base.metadata.create_all()` plus ~15 hand-written ALTER TABLE /
+    # ALTER TYPE statements) and MUST stay False in any environment
+    # Alembic manages - two owners is how the schema drifted away from
+    # the migration history in the first place, leaving `alembic_version`
+    # missing entirely. Provided only as an escape hatch for a throwaway
+    # local database that Alembic does not manage.
+    db_auto_bootstrap: bool = Field(default=False, alias="DB_AUTO_BOOTSTRAP")
+
     database_url: str = Field(
         default="postgresql+asyncpg://user:password@db:5432/crypto_signals",
         alias="DATABASE_URL",

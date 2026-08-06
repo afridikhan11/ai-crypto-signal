@@ -27,8 +27,19 @@ def upgrade() -> None:
     op.create_table(
         "equity_snapshots",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        # nullable=False: `sa.Column` defaults to nullable=True, but the
+        # model's TimestampMixin declares `Mapped[datetime]` (not Optional),
+        # which is NOT NULL. See the NULLABILITY note in 20260730_00.
+        #
+        # server_default on updated_at is REQUIRED, not cosmetic. The model
+        # gives it `server_default=func.now()`, so SQLAlchemy OMITS the
+        # column from every INSERT and expects the database to fill it.
+        # NOT NULL with no database default would therefore make every
+        # equity-snapshot insert fail with a NotNullViolation.
+        sa.Column("created_at", sa.DateTime(timezone=True),
+                  server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True),
+                  server_default=sa.func.now(), nullable=False),
         sa.Column("captured_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("equity", sa.Float(), nullable=False),
         sa.Column("wallet_balance", sa.Float(), nullable=True),
@@ -47,8 +58,15 @@ def upgrade() -> None:
     op.create_table(
         "risk_assessments",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        # Same reasoning as equity_snapshots above. This one matters more:
+        # a NotNullViolation here would fail every risk-decision audit
+        # write - and those are deliberately best-effort (see
+        # app/services/risk_audit.py), so the failure would be swallowed
+        # and the audit trail would silently be empty.
+        sa.Column("created_at", sa.DateTime(timezone=True),
+                  server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True),
+                  server_default=sa.func.now(), nullable=False),
         sa.Column("signal_id", sa.Uuid(), sa.ForeignKey("signals.id", ondelete="SET NULL"),
                   nullable=True),
         sa.Column("symbol", sa.String(length=30), nullable=False),

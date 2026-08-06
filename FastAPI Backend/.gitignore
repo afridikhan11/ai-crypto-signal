@@ -3,3 +3,12 @@ __pycache__/
 *.pyc
 logs/
 .env
+
+# SECRETS - never commit (2026-07-31).
+# binance_credentials.enc is Fernet-encrypted, but the key is PBKDF2-derived
+# from SECRET_KEY using a salt and iteration count that are both public in
+# this repository (app/security/api_key_cipher.py). With SECRET_KEY at its
+# placeholder default, every input to the key derivation is public and the
+# file is effectively plaintext. It must never be in version control.
+data/binance_credentials.enc
+data/*.enc

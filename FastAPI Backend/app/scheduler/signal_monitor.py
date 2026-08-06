@@ -714,7 +714,23 @@ class SignalMonitor:
                         status = str(raw.get("status", "")).upper()
                         executed_qty = float(raw.get("executedQty", 0) or 0)
                         if status == "FILLED" or (status == "PARTIALLY_FILLED" and executed_qty > 0):
-                            avg_price = float(raw.get("avgPrice", 0) or 0) or signal.entry_price
+                            # G6 (A5-lite, 2026-08-01): prefer the exchange's
+                            # own avgPrice. When it is absent, falling back to
+                            # entry_price is CORRECT only for a LIMIT entry
+                            # (it fills at its limit price by construction).
+                            # For any other entry type (STOP_MARKET entries
+                            # exist as of G3, and fill with slippage) the fill
+                            # price is genuinely unknown -> None, never the
+                            # planned entry.
+                            avg_price = float(raw.get("avgPrice", 0) or 0) or None
+                            if avg_price is None and str(raw.get("type", "")).upper() == "LIMIT":
+                                avg_price = signal.entry_price
+                            if avg_price is None:
+                                logger.warning(
+                                    f"{symbol}: entry order {signal.entry_order_id} filled but Binance "
+                                    f"reported no avgPrice and the order is not a LIMIT - recording "
+                                    f"actual_fill_price as unknown rather than substituting the planned entry."
+                                )
                             signal.status = SignalStatus.ACTIVE
                             signal.filled_at = now
                             signal.actual_fill_price = avg_price

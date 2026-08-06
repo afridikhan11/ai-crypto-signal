@@ -225,3 +225,52 @@ def set_entry_mode(value: str) -> str:
 def is_ict_pending_entry() -> bool:
     """Convenience read used across the scanner/monitor/execution path."""
     return get_entry_mode() == ENTRY_MODE_ICT_PENDING
+
+
+# ---------------------------------------------------------------------------
+# Execution band (A5-lite G2, 2026-08-01 - Final Architecture Spec §7).
+#
+# When a signal's entry sits within `entry_band_ticks` ticks of the current
+# price, a resting order would fill immediately - a de-facto market order.
+# `entry_band_policy` decides what Place Signal Order does then:
+#   "reject"           (default) - refuse; the user must consciously choose
+#                      Execute Market if an immediate fill is wanted.
+#   "immediate_market" - knowingly execute at market.
+# Same read-modify-write JSON file as every other setting here; no UI is
+# required to change it (spec: configuration surface arrives with
+# /v2/auto-trading/config in Phase A4).
+# ---------------------------------------------------------------------------
+DEFAULT_ENTRY_BAND_TICKS = 5
+DEFAULT_ENTRY_BAND_POLICY = "reject"
+VALID_ENTRY_BAND_POLICIES = {"reject", "immediate_market"}
+
+
+def get_entry_band_ticks() -> int:
+    raw_value = _read_settings().get("entry_band_ticks", DEFAULT_ENTRY_BAND_TICKS)
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Saved entry_band_ticks ({raw_value!r}) is not an integer - falling back "
+            f"to default {DEFAULT_ENTRY_BAND_TICKS}."
+        )
+        return DEFAULT_ENTRY_BAND_TICKS
+    if value < 0:
+        logger.warning(
+            f"Saved entry_band_ticks ({value}) is negative - falling back to "
+            f"default {DEFAULT_ENTRY_BAND_TICKS}."
+        )
+        return DEFAULT_ENTRY_BAND_TICKS
+    return value
+
+
+def get_entry_band_policy() -> str:
+    raw_value = _read_settings().get("entry_band_policy", DEFAULT_ENTRY_BAND_POLICY)
+    if isinstance(raw_value, str) and raw_value in VALID_ENTRY_BAND_POLICIES:
+        return raw_value
+    logger.warning(
+        f"Saved entry_band_policy ({raw_value!r}) is not one of "
+        f"{sorted(VALID_ENTRY_BAND_POLICIES)} - falling back to default "
+        f"{DEFAULT_ENTRY_BAND_POLICY!r} (the safe behaviour)."
+    )
+    return DEFAULT_ENTRY_BAND_POLICY

@@ -1,0 +1,36 @@
+# Build context exclusions (2026-07-31).
+#
+# Without this file, `COPY . .` baked the entire working tree into the image
+# - including .git (every historical commit, so deleting a secret from the
+# working tree would NOT remove it from the image), .env, and the encrypted
+# Binance credentials file.
+#
+# DO NOT add app/, alembic/, or scripts/ here. scripts/ in particular holds
+# docker-entrypoint.sh and wait_for_db.py, which the ENTRYPOINT runs; the
+# image will not start without them.
+
+# --- secrets ---------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.production.example
+data/binance_credentials.enc
+data/*.enc
+
+# --- version control (contains the full history of every secret) ------
+.git
+.gitignore
+.gitattributes
+
+# --- build / runtime detritus -----------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+logs/
+*.log
+
+# --- not needed at runtime --------------------------------------------
+tests/
+.pytest_cache/
+data/smc_frequency_report_*.json

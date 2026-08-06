@@ -1,6 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ======================================================================
+# OBSOLETE - DISABLED 2026-07-31. DO NOT RUN.
+# ======================================================================
+# This is the original one-shot scaffolding script that generated the
+# project's first files. It is kept for historical reference only.
+#
+# Running it now would be DESTRUCTIVE. It does `cat > app/main.py`, so it
+# overwrites the current application entrypoint with the 2024 version -
+# discarding the exception handlers, the risk-limit coherence assertion,
+# the Universal Scanner wiring and everything else added since.
+#
+# It is also the last remaining place in this repository outside
+# alembic/ that contains `Base.metadata.create_all()`. Alembic is now the
+# single owner of the database schema (see
+# app/core/legacy_schema_bootstrap.py); re-generating a main.py that
+# creates its own schema would reintroduce exactly the divergence that
+# left `alembic_version` missing.
+#
+# To scaffold a fresh copy of this project, clone the repository and run
+# `alembic upgrade head`. Delete the guard below only if you have read
+# every heredoc in this file and genuinely intend to overwrite your
+# working tree.
+# ======================================================================
+echo "REFUSING TO RUN: setup_module1.sh is obsolete scaffolding and would" >&2
+echo "overwrite app/main.py with a pre-Alembic version. See the comment" >&2
+echo "block at the top of this file." >&2
+exit 1
+
 # ----------------------------------------------------------------------
 # AI Crypto Signal System – Module 1 Setup Script
 # ----------------------------------------------------------------------

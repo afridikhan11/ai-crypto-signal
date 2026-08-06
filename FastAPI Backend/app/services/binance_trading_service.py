@@ -82,6 +82,14 @@ class OrderResult(BaseModel):
     status: str
     quantity: float
     price: Optional[float] = None
+    # The REAL average fill price as reported by Binance in the order
+    # response (`avgPrice`), when the order has actually (partially)
+    # filled. None otherwise - NEVER defaulted to the requested/planned
+    # price: those are different facts, and conflating them is exactly the
+    # G6 defect (a MARKET sell that filled at ~97 was recorded as filled
+    # at the signal's 100.445). A5-lite, 2026-08-01. Additive and optional,
+    # so every existing constructor call and consumer is unaffected.
+    avg_fill_price: Optional[float] = None
 
 
 class ExecutionResult(BaseModel):
@@ -256,6 +264,19 @@ class BinanceTradingService:
     # Order placement
     # ------------------------------------------------------------------
     @staticmethod
+    def _parse_avg_price(raw: dict) -> Optional[float]:
+        """The real average fill price from a Binance order response, or
+        None when the response carries no fill yet ("avgPrice": "0" /
+        missing / unparseable). Returning None instead of 0.0 or a planned
+        price keeps 'unknown' distinguishable from 'filled at' - spec
+        invariant 5. (G6, A5-lite 2026-08-01.)"""
+        try:
+            value = float(raw.get("avgPrice", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
     def _client_order_id(signal_id: Optional[str], leg: str) -> Optional[dict]:
         """
         Deterministic newClientOrderId per order leg, derived from the
@@ -359,6 +380,11 @@ class BinanceTradingService:
             order_type="MARKET",
             status=entry_raw.get("status", "NEW"),
             quantity=qty,
+            # G6: the REAL fill price from Binance's own response. Futures
+            # order responses carry `avgPrice` as a string, "0" until a
+            # fill is reflected. >0 -> real fill price; otherwise None -
+            # never a copy of the signal's planned entry.
+            avg_fill_price=self._parse_avg_price(entry_raw),
         )
 
         warnings: list[str] = []
@@ -500,6 +526,107 @@ class BinanceTradingService:
             status=raw.get("status", "NEW"),
             quantity=qty,
             price=limit_price,
+        )
+
+    async def get_price_and_tick(self, symbol: str) -> tuple[float, float]:
+        """(last traded price, tick size) for `symbol` - the two inputs the
+        §7 execution matrix needs. Public on purpose: the Manual Trading
+        endpoints (A5-lite) must not reach into private members for this.
+        Raises BinanceTradingError if either is unavailable - the matrix
+        must never run on a guessed price or a zero tick."""
+        symbol = symbol.upper()
+        ticker = await self._public_get("/fapi/v1/ticker/price", {"symbol": symbol})
+        try:
+            last_price = float(ticker["price"])
+        except (KeyError, TypeError, ValueError):
+            raise BinanceTradingError(f"Could not read a live price for {symbol} from Binance.")
+        if last_price <= 0:
+            raise BinanceTradingError(f"Binance returned a non-positive price for {symbol}: {last_price}")
+
+        filters = await self._get_symbol_filters(symbol)
+        tick_size = float(filters.get("tick_size") or 0)
+        if tick_size <= 0:
+            raise BinanceTradingError(
+                f"No usable tick size for {symbol} - cannot resolve an entry order type safely."
+            )
+        return last_price, tick_size
+
+    async def place_stop_market_entry(
+        self,
+        symbol: str,
+        direction: str,  # "LONG" | "SHORT"
+        quantity: float,
+        stop_price: float,
+        signal_id: Optional[str] = None,
+    ) -> OrderResult:
+        """
+        Rests a STOP-MARKET ENTRY order (G3, A5-lite 2026-08-01 - spec §7):
+        triggers when price reaches `stop_price` and then fills at market.
+        This is the entry for the matrix's other half - a LONG whose entry
+        is ABOVE the current price (breakout continuation) or a SHORT whose
+        entry is BELOW it, which previously could not be represented at
+        all: every existing STOP_MARKET in this service is reduceOnly
+        protection. This one deliberately is NOT reduceOnly - it OPENS a
+        position.
+
+        `workingType=CONTRACT_PRICE` per spec §7 edge rule 2: trigger on
+        the last traded price, not mark price, so the trigger corresponds
+        to the chart the strategy analysed.
+
+        Same execution discipline as `place_limit_entry`: same filters,
+        rounding, MIN_NOTIONAL pre-check and idempotent client order id -
+        this is the third entry shape, not a third implementation style.
+        No protective orders are placed here; like the LIMIT entry, the
+        stop-loss/take-profit can only exist after a position does
+        (`place_protective_orders`, on observed fill).
+        """
+        symbol = symbol.upper()
+        filters = await self._get_symbol_filters(symbol)
+        qty = self._round_to_step(quantity, filters["step_size"])
+        if qty <= 0:
+            raise BinanceTradingError(
+                f"Computed quantity for {symbol} rounds down to 0 with this account size/risk% - "
+                "position too small to place."
+            )
+
+        trigger_price = self._round_price(stop_price, filters["tick_size"])
+        if trigger_price <= 0:
+            raise BinanceTradingError(
+                f"Stop-entry trigger price for {symbol} rounds to {trigger_price} - refusing to place."
+            )
+        min_notional = filters.get("min_notional", 0.0)
+        if min_notional > 0:
+            notional = qty * trigger_price
+            if notional < min_notional:
+                raise BinanceTradingError(
+                    f"Order value ${notional:.2f} for {symbol} is below Binance's minimum notional "
+                    f"(${min_notional:.2f}) - increase risk % or account size, or skip this signal."
+                )
+
+        entry_side = "BUY" if direction == "LONG" else "SELL"
+        params = {
+            "symbol": symbol,
+            "side": entry_side,
+            "type": "STOP_MARKET",
+            "stopPrice": trigger_price,
+            "quantity": qty,
+            "workingType": "CONTRACT_PRICE",
+            # NOT reduceOnly - this order OPENS the position.
+        }
+        params.update(self._client_order_id(signal_id, "E") or {})
+        raw = await self._signed_post("/fapi/v1/order", params)
+        logger.info(
+            f"{symbol}: STOP-MARKET entry placed | {direction} | qty={qty} trigger @ {trigger_price} "
+            f"| order {raw['orderId']}"
+        )
+        return OrderResult(
+            order_id=raw["orderId"],
+            symbol=symbol,
+            side=entry_side,
+            order_type="STOP_MARKET",
+            status=raw.get("status", "NEW"),
+            quantity=qty,
+            price=trigger_price,
         )
 
     async def place_protective_orders(

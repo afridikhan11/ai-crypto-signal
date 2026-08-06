@@ -189,7 +189,12 @@ async def execute_signal(
     signal.executed_environment = execution.environment
     # A market entry fills immediately, so the position is open right now.
     signal.filled_at = signal.executed_at
-    signal.actual_fill_price = signal.entry_price
+    # G6 fix (A5-lite, 2026-08-01): record the REAL Binance average fill
+    # price from the order response, or None when Binance reported none.
+    # Previously this copied signal.entry_price - which recorded the
+    # 2026-07-31 AAVEUSDT market sell (real fill ~97.4) as "filled at
+    # 100.445". A planned price is never a fill price.
+    signal.actual_fill_price = execution.entry_order.avg_fill_price
     await db.commit()
 
     return ExecuteSignalResponse(

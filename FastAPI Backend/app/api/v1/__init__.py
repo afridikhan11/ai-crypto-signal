@@ -13,6 +13,7 @@ from app.api.v1.endpoints.agent import router as agent_router
 from app.api.v1.endpoints.portfolio import router as portfolio_router
 from app.api.v1.endpoints.performance import router as performance_router
 from app.api.v1.endpoints.trading_control import router as trading_control_router
+from app.api.v1.endpoints.manual_trading import router as manual_trading_router
 
 api_router = APIRouter()
 
@@ -36,3 +37,4 @@ api_router.include_router(performance_router)
 # trading_router (execute/close-position) but registers distinct paths
 # (/trading/status, /trading/engine/*, etc.) - no route collision.
 api_router.include_router(trading_control_router)
+api_router.include_router(manual_trading_router)

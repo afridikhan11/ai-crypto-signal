@@ -11,22 +11,57 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1 forces a TCP check, and it matters. Without it
+      # pg_isready uses the unix socket - which the TEMPORARY server the
+      # postgres image runs during initdb also answers, while that server
+      # deliberately sets listen_addresses='' and accepts no TCP at all.
+      # A socket-only check therefore reports healthy while the app's
+      # asyncpg connection to db:5432 is still refused, which is the exact
+      # failure this healthcheck exists to prevent.
+      #
+      # $$ escapes to a single $ so the variable is expanded by the shell
+      # INSIDE the db container, where POSTGRES_USER/POSTGRES_DB are set.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # First-boot initdb (create cluster, role, database) takes longer
+      # than a restart. Failures during start_period do not count toward
+      # `retries`, so this does not shorten the real retry budget.
+      start_period: 15s
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   app:
     build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Server arguments ONLY. Waiting for the database and running
+    # `alembic upgrade head` happen in the image's ENTRYPOINT
+    # (scripts/docker-entrypoint.sh), which a `command:` override cannot
+    # bypass. Previously this line carried the migration itself, so any
+    # edit to it could silently drop the migration step.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - .:/app
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      # service_started only waits for the container to exist, which is
+      # what produced `ConnectionRefusedError: Connect call failed
+      # ('db', 5432)` - the container was up, PostgreSQL inside it was not.
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
 

@@ -1,0 +1,22 @@
+# Line-ending policy.
+#
+# Anything EXECUTED INSIDE the Linux container must be checked out with LF.
+# A shell script with CRLF fails under `sh` with an unreadable
+# "\r: not found", or an "unexpected end of file" when a heredoc terminator
+# picks up a stray \r (setup_module1.sh in this repository is already in
+# that state).
+#
+# The Dockerfile strips CR from scripts/docker-entrypoint.sh at build time,
+# but that protection does NOT apply in development: docker-compose.yml
+# bind-mounts `.:/app`, which replaces the image's processed copy with the
+# HOST file. In dev the checked-out line endings are what actually run.
+# This file is therefore the only durable fix.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+alembic.ini     text eol=lf
+
+# Normalising these on checkout is safe and keeps diffs meaningful.
+*.py            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
