@@ -79,6 +79,7 @@ from app.smc.inducement_engine import InducementEngine
 from app.smc.ote_engine import OTEEngine
 from app.smc.htf_structure_engine import HTFStructureEngine
 from app.smc.institutional_bias_engine import InstitutionalBiasEngine
+from app.smc.latest_ict_confluence import LatestICTConfluenceEngine
 from app.strategy.entry_engine import EntryEngine
 from app.strategy.entry_validation_engine import EntryValidationEngine
 from app.strategy.exit_engine import ExitEngine
@@ -143,6 +144,9 @@ class SignalGenerator:
         self.exit_engine = ExitEngine()
         self.evidence_engine = ICTEvidenceEngine()
         self.decision_engine = ICTDecisionEngine()
+        # Additive latest-ICT confluence layer (does not alter scoring; feeds
+        # supplementary evidence notes only).
+        self.latest_ict_confluence = LatestICTConfluenceEngine()
 
     # ------------------------------------------------------------------
     # Volatility regime
@@ -613,6 +617,23 @@ class SignalGenerator:
             )
 
         htf_1d = htf_snapshot.get("1d")
+
+        # Additive: run the fourteen newer ICT engines and surface their reads
+        # as supplementary evidence notes. Never raises into the signal path,
+        # and never touches the calibrated scorer.
+        confluence_notes: List[str] = []
+        try:
+            _dir = "bullish" if direction == Direction.LONG else "bearish"
+            _confluence = self.latest_ict_confluence.analyze(
+                df, direction=_dir, fvgs=relevant_fvgs, order_blocks=[ob] if ob else None,
+            )
+            confluence_notes = (
+                [f"[Latest-ICT] {s.name}: {s.detail}" for s in _confluence.signals]
+                + list(_confluence.notes)
+            )
+        except Exception as _e:  # noqa: BLE001 - confluence is advisory only
+            logger.debug(f"{self.symbol}: latest-ICT confluence skipped: {_e}")
+
         evidence_report = self.evidence_engine.compile(ICTEvidenceInputs(
             symbol=self.symbol,
             timeframe="15m",
@@ -630,7 +651,7 @@ class SignalGenerator:
             premium_discount_position=zone_position,
             session_context=session_ctx,
             volume_confirmation=conf_latest,
-            institutional_bias_notes=list(institutional_bias.supporting_evidence),
+            institutional_bias_notes=list(institutional_bias.supporting_evidence) + confluence_notes,
             risk_notes=risk_notes,
             htf_structure_alignment=htf_1d.structure_alignment if htf_1d else None,
             htf_timeframe_label="1D",
