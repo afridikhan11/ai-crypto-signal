@@ -146,6 +146,8 @@ class FVGDetector:
             return current_price >= fvg.bottom and current_price <= fvg.top
 
     def detect_inverse_fvg(self) -> List[FairValueGap]:
+        if self.df.empty:
+            return []
         fvgs = self.detect_fvg()
         current = self.df["close"].iloc[-1]
         inverse = []

@@ -357,11 +357,15 @@ class LiquidityEngine:
             return False
         window_end_ts = self.df.index[min(swept_idx + self.related_event_lookahead, len(self.df) - 1)]
         swept_ts = self.df.index[swept_idx]
-        return any(
-            swept_ts <= getattr(e, "timestamp") <= window_end_ts
-            and getattr(getattr(e, "type"), "value", getattr(e, "type")) == reversal_type_wanted
-            for e in events
-        )
+
+        def _in_window(e) -> bool:
+            ts = getattr(e, "timestamp", None)
+            if ts is None:
+                return False
+            etype = getattr(getattr(e, "type", None), "value", getattr(e, "type", None))
+            return swept_ts <= ts <= window_end_ts and etype == reversal_type_wanted
+
+        return any(_in_window(e) for e in events)
 
     def _classify_sweep(self, level: LiquidityLevel):
         formation_idx = max((s.index for s in level.swing_points), default=None)

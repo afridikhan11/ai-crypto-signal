@@ -377,6 +377,21 @@ class MarketStructureEngine:
                             displacement_ratio=disp, is_mss=True,
                         ))
 
+        # De-duplicate: in an established trend the BOS scan and the CHoCH
+        # scan can land on the SAME swing/candle (e.g. breaking the last HL in
+        # an uptrend), emitting one price event as both a continuation BOS and
+        # a reversal CHoCH — contradictory labels. A CHoCH (change of
+        # character) is the stronger, correct read, so drop any BOS that shares
+        # its timestamp/direction/level.
+        choch_keys = {
+            (b.timestamp, b.direction, b.level) for b in breaks if b.type == "CHoCH"
+        }
+        if choch_keys:
+            breaks = [
+                b for b in breaks
+                if not (b.type == "BOS" and (b.timestamp, b.direction, b.level) in choch_keys)
+            ]
+
         return breaks
 
     # ------------------------------------------------------------------
@@ -422,7 +437,13 @@ class MarketStructureEngine:
         protected_high, protected_low = self._protected_levels(external_highs, external_lows)
 
         def _latest_bias(breaks: List[StructureBreak]) -> Optional[str]:
-            return breaks[-1].direction if breaks else None
+            # Bias is the direction of the chronologically most-recent break.
+            # breaks are appended in fixed code order (BOS then CHoCH), NOT in
+            # time order, so breaks[-1] could be an older event — pick by
+            # timestamp instead.
+            if not breaks:
+                return None
+            return max(breaks, key=lambda b: b.timestamp).direction
 
         internal_bias = _latest_bias(internal_breaks)
         external_bias = _latest_bias(external_breaks)

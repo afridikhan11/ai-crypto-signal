@@ -86,6 +86,34 @@ class TestValidBullishOTE:
         assert clean.retracement_quality == "clean"
 
 
+class TestLegAnchoring:
+    """Regression: the OTE fib must be measured on the impulse leg (origin low
+    -> impulse high), even after a retracement has formed a fresh swing low
+    past the break. Previously the leg origin jumped onto that pullback low."""
+
+    def test_leg_anchored_to_impulse_not_retracement(self):
+        # Impulse: L0@5 (95) -> H0@20 (105).  Retracement then prints a fresh
+        # swing low L1@30 (99).  The OTE leg must stay 95 -> 105.
+        swing_lows = [_swing(5, 95.0, SwingType.LL), _swing(30, 99.0, SwingType.HL)]
+        swing_highs = [_swing(20, 105.0, SwingType.HH)]
+        brk = StructureBreak(
+            timestamp=_ts(20), type="BOS", direction="bullish", broken_swing=swing_highs[0],
+            level=104.0, scope=StructureScope.EXTERNAL, displacement_ratio=1.5, is_mss=False,
+        )
+        snap = MarketStructureSnapshot(
+            swing_highs=swing_highs, swing_lows=swing_lows, internal_breaks=[], external_breaks=[brk],
+            protected_high=None, protected_low=None, structure_alignment="aligned_bullish",
+        )
+        obs, fvgs, liqs = _full_confluence()
+        zone = OTEEngine().detect(
+            snap, order_blocks=obs, fvgs=fvgs, liquidity_levels=liqs,
+            premium_discount_zone="discount", current_price=99.0,
+        )
+        assert zone is not None
+        assert zone.leg_start_price == 95.0
+        assert zone.leg_end_price == 105.0
+
+
 class TestBearishMirror:
     def test_full_confluence_bearish(self):
         swing_highs = [_swing(5, 105.0, SwingType.HH)]
