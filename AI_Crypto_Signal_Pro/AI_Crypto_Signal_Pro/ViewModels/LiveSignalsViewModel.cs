@@ -58,6 +58,10 @@ public partial class LiveSignalsViewModel : ObservableObject
                     Status = s.Status,
                     Timeframe = s.Timeframe,
                     AiModelVersion = s.AiModelVersion,
+                    Session = s.Session,
+                    HtfBias = s.HtfBias,
+                    BiasStrength = s.BiasStrength,
+                    MaxTpHit = s.MaxTpHit,
                     CreatedAt = s.CreatedAt,
                     UpdatedAt = s.UpdatedAt,
                     ClosedAt = s.ClosedAt

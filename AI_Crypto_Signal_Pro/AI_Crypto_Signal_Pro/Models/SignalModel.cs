@@ -32,6 +32,16 @@ public class SignalModel
 
     public string? AiModelVersion { get; set; }
 
+    // ICT context (from the multi-timeframe backend)
+    public string? Session { get; set; }
+
+    public string? HtfBias { get; set; }
+
+    public double? BiasStrength { get; set; }
+
+    // Highest take-profit reached so far (0-3)
+    public int MaxTpHit { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

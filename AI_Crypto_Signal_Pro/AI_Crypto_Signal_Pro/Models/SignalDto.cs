@@ -53,6 +53,18 @@ namespace AI_Crypto_Signal_Pro.Models
         [JsonPropertyName("ai_model_version")]
         public string? AiModelVersion { get; set; }
 
+        [JsonPropertyName("session")]
+        public string? Session { get; set; }
+
+        [JsonPropertyName("htf_bias")]
+        public string? HtfBias { get; set; }
+
+        [JsonPropertyName("bias_strength")]
+        public double? BiasStrength { get; set; }
+
+        [JsonPropertyName("max_tp_hit")]
+        public int MaxTpHit { get; set; }
+
         [JsonPropertyName("created_at")]
         public DateTime CreatedAt { get; set; }
 

@@ -27,10 +27,14 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Coin" Binding="{Binding Coin}" Width="*"/>
                     <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*"/>
+                    <DataGridTextColumn Header="HTF Bias" Binding="{Binding HtfBias}" Width="*"/>
+                    <DataGridTextColumn Header="Session" Binding="{Binding Session}" Width="*"/>
                     <DataGridTextColumn Header="Entry" Binding="{Binding Entry}" Width="*"/>
                     <DataGridTextColumn Header="Stop Loss" Binding="{Binding StopLoss}" Width="*"/>
                     <DataGridTextColumn Header="Take Profit" Binding="{Binding TakeProfit}" Width="*"/>
+                    <DataGridTextColumn Header="R:R" Binding="{Binding RiskReward}" Width="*"/>
                     <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="*"/>
+                    <DataGridTextColumn Header="TP Hit" Binding="{Binding MaxTpHit}" Width="Auto"/>
                     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
                 </DataGrid.Columns>
             </DataGrid>
