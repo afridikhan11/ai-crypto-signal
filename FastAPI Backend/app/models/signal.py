@@ -37,8 +37,16 @@ class Signal(Base, TimestampMixin):
         SQLEnum(SignalStatus), default=SignalStatus.ACTIVE
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    timeframe: Mapped[str] = mapped_column(String(10), default="1m")
+    timeframe: Mapped[str] = mapped_column(String(10), default="15m")
     ai_model_version: Mapped[str | None] = mapped_column(String(20))
+
+    # ICT context (nullable — additive, backward compatible)
+    session: Mapped[str | None] = mapped_column(String(20))
+    htf_bias: Mapped[str | None] = mapped_column(String(10))
+    bias_strength: Mapped[float | None] = mapped_column(Float)
+
+    # Highest take-profit reached so far (0-3); status only flips on close.
+    max_tp_hit: Mapped[int] = mapped_column(Integer, default=0)
 
     # Relationship to Coin – enables eager loading and direct access to coin symbol
     coin: Mapped["Coin"] = relationship("Coin", back_populates="signals")

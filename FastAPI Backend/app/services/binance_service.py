@@ -146,6 +146,28 @@ class BinanceDataManager:
         return candles
 
     # ------------------------------------------------------------------
+    # Funding Rate (institutional sentiment)
+    # ------------------------------------------------------------------
+    async def fetch_funding_rate(self, symbol: str) -> float:
+        """Return the latest funding rate for a perpetual, or 0.0 on failure.
+
+        Positive funding => longs pay shorts (crowded long); negative => the
+        reverse. Used as a contrarian institutional filter.
+        """
+        url = f"{self.REST_URL}/fapi/v1/premiumIndex"
+        params = {"symbol": symbol.upper()}
+        try:
+            async with self._http_semaphore:
+                client = await self._get_http_client()
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+            return float(data.get("lastFundingRate", 0.0) or 0.0)
+        except Exception as e:  # noqa: BLE001 - never let context break scanning
+            logger.warning(f"Funding rate fetch failed for {symbol}: {e}")
+            return 0.0
+
+    # ------------------------------------------------------------------
     # Initialise all symbols and timeframes (never fails completely)
     # ------------------------------------------------------------------
     async def initialise_historical_data(self):

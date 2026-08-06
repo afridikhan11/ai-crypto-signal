@@ -25,6 +25,10 @@ class SignalResponse(BaseModel):
     status: str
     timeframe: str
     ai_model_version: Optional[str] = None
+    session: Optional[str] = None
+    htf_bias: Optional[str] = None
+    bias_strength: Optional[float] = None
+    max_tp_hit: int = 0
     created_at: datetime
     updated_at: datetime
     closed_at: Optional[datetime] = None

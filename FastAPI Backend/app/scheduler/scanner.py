@@ -1,131 +1,135 @@
+"""Live multi-timeframe scanner.
+
+Streams candles for the whole symbol universe, and on every close of the entry
+timeframe runs the ICT signal generator with *real* market context (BTC bias,
+funding, volatility). New signals are persisted and published to Redis.
+"""
+
 import asyncio
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from loguru import logger
 from sqlalchemy import select
 
-from app.services.binance_service import BinanceDataManager
-from app.strategy.signal_generator import SignalGenerator
-from app.models.signal import Signal, Direction, SignalStatus
-from app.models.coin import Coin
+from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.redis import redis_client
+from app.market.context import MarketContext
+from app.market.universe import get_scan_symbols
+from app.models.coin import Coin
+from app.models.signal import Direction, Signal, SignalStatus
+from app.services.binance_service import BinanceDataManager
+from app.strategy.signal_generator import SignalGenerator
 
 
 class CryptoScanner:
-    def __init__(self, symbols: List[str]):
-        self.data_manager = BinanceDataManager(symbols)
-        self.generators = {s: SignalGenerator(s) for s in symbols}
-        self._running = False
-        self._symbol_locks = {s: asyncio.Lock() for s in symbols}
+    def __init__(self, symbols: List[str] | None = None):
+        settings = get_settings()
+        self.settings = settings
+        self.symbols = symbols or get_scan_symbols()
+        self.ltf = settings.ltf_timeframe
+        self.htf_order = settings.htf_list
 
+        self.data_manager = BinanceDataManager(
+            self.symbols, timeframes=settings.stream_tf_list
+        )
+        self.context = MarketContext(self.data_manager, self.htf_order)
+        self.generators = {
+            s: SignalGenerator(
+                s,
+                min_confidence=settings.min_confidence,
+                min_rr=settings.min_risk_reward,
+            )
+            for s in self.symbols
+        }
+        self._running = False
+        self._symbol_locks = {s: asyncio.Lock() for s in self.symbols}
+
+    # ------------------------------------------------------------------
     async def start(self):
         logger.info("Initializing historical market data...")
-
         await self.data_manager.initialise_historical_data()
-
         logger.success("Historical data loaded successfully.")
 
-        # Initial scan so signals can be generated immediately
-        for symbol in self.generators.keys():
+        for symbol in self.symbols:
             try:
                 await self.analyze_symbol(symbol)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.exception(f"Initial scan failed for {symbol}: {e}")
-
         logger.success("Initial market scan completed.")
 
         self.data_manager.set_on_candle_callback(self.on_new_candle)
-
         self._running = True
-
         asyncio.create_task(self.data_manager.start_websocket())
+        logger.info(f"Crypto scanner started (entry TF={self.ltf}, HTF={self.htf_order}).")
 
-        logger.info("Crypto scanner started.")
-
+    # ------------------------------------------------------------------
     async def on_new_candle(self, symbol: str, interval: str, candles):
-        if interval != "1m":
+        # Only re-evaluate on entry-timeframe closes; HTF frames stay cached.
+        if interval != self.ltf:
             return
-
         async with self._symbol_locks[symbol]:
             await self.analyze_symbol(symbol)
 
+    # ------------------------------------------------------------------
     async def analyze_symbol(self, symbol: str):
         try:
-            logger.info(f"[{symbol}] Analysis started")
-
-            df = self.data_manager.get_dataframe(symbol, "1m", limit=200)
-
-            logger.info(f"[{symbol}] Candles loaded: {len(df)}")
-
-            if df.empty:
-                logger.warning(f"[{symbol}] DataFrame is empty")
+            ltf_df = self.data_manager.get_dataframe(symbol, self.ltf, limit=300)
+            if ltf_df.empty:
                 return
 
-            btc_trend = "up"
-            funding_rate = 0.0001
-            volatility = "normal"
+            htf_frames = {
+                tf: self.data_manager.get_dataframe(symbol, tf, limit=300)
+                for tf in self.htf_order
+            }
 
-            logger.info(f"[{symbol}] Creating signal generator")
+            btc_trend = self.context.btc_trend()
+            funding_rate = await self.context.funding_rate(symbol)
+            volatility = MarketContext.classify_volatility(ltf_df)
 
-            generator = self.generators[symbol]
-            
-            logger.info(f"[{symbol}] Calling generate()")
-            
-            signal_data = generator.generate(
-                df,
-                btc_trend,
-                funding_rate,
-                volatility,
+            signal_data = self.generators[symbol].generate(
+                ltf_df,
+                htf_frames,
+                self.htf_order,
+                btc_trend=btc_trend,
+                funding_rate=funding_rate,
+                volatility=volatility,
+                enforce_killzones=self.settings.enforce_killzones,
+                ltf_timeframe=self.ltf,
             )
-
-            logger.info(f"[{symbol}] generate() returned: {signal_data}")
 
             if signal_data is None:
-                logger.info(f"{symbol}: No signal generated.")
                 return
 
-            logger.success(
-                f"{symbol}: Signal generated "
-                f"({signal_data['direction']}) "
-                f"Confidence={signal_data['confidence']}"
-            )
-
             await self.save_signal(signal_data)
-
-            logger.success(f"[{symbol}] Signal saved successfully")
-            
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.exception(f"Error analyzing {symbol}: {e}")
 
+    # ------------------------------------------------------------------
     async def save_signal(self, data: Dict[str, Any]):
         async with AsyncSessionLocal() as session:
-
-            stmt = select(Coin).where(
-                Coin.symbol == data["symbol"].upper()
-            )
-
-            result = await session.execute(stmt)
-
-            coin = result.scalar_one_or_none()
+            coin = (
+                await session.execute(
+                    select(Coin).where(Coin.symbol == data["symbol"].upper())
+                )
+            ).scalar_one_or_none()
 
             if coin is None:
                 coin = Coin(symbol=data["symbol"].upper())
                 session.add(coin)
                 await session.flush()
 
-            stmt = select(Signal).where(
-                Signal.coin_id == coin.id,
-                Signal.status == SignalStatus.ACTIVE,
-            )
-
-            result = await session.execute(stmt)
-
-            if result.scalar_one_or_none():
-                logger.info(
-                    f"{data['symbol']}: Active signal already exists."
+            existing = (
+                await session.execute(
+                    select(Signal).where(
+                        Signal.coin_id == coin.id,
+                        Signal.status == SignalStatus.ACTIVE,
+                    )
                 )
+            ).scalar_one_or_none()
+            if existing:
+                logger.info(f"{data['symbol']}: active signal already exists.")
                 return
 
             signal = Signal(
@@ -139,26 +143,22 @@ class CryptoScanner:
                 risk_reward=data["risk_reward"],
                 confidence=data["confidence"],
                 reason=data["reason"],
-                timeframe="1m",
-                ai_model_version="1.0.0",
+                timeframe=data.get("timeframe", self.ltf),
+                ai_model_version=data.get("ai_model_version"),
+                session=data.get("session"),
+                htf_bias=data.get("htf_bias"),
+                bias_strength=data.get("bias_strength"),
             )
-
             session.add(signal)
-
             await session.commit()
-
             logger.success(
-                f"Saved signal: "
-                f"{data['symbol']} "
-                f"{data['direction']} "
-                f"Confidence={data['confidence']}"
+                f"Saved signal: {data['symbol']} {data['direction']} "
+                f"conf={data['confidence']} rr={data['risk_reward']}"
             )
 
-            await redis_client.publish(
-                "new_signal",
-                json.dumps(data, default=str),
-            )
+            await redis_client.publish("new_signal", json.dumps(data, default=str))
 
+    # ------------------------------------------------------------------
     async def stop(self):
         self._running = False
         await self.data_manager.stop()

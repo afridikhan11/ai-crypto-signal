@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -17,14 +18,14 @@ async def health_check(
         await db.execute(text("SELECT 1"))
         db_status = "ok"
     except Exception as e:
-        print(f"Database health check error: {e}")
+        logger.error(f"Database health check error: {e}")
         db_status = "error"
 
     try:
         await redis.ping()
         redis_status = "ok"
     except Exception as e:
-        print(f"Redis health check error: {e}")
+        logger.error(f"Redis health check error: {e}")
         redis_status = "error"
 
     return {

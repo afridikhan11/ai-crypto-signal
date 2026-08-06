@@ -1,74 +1,67 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.api.v1 import api_router
 from app.core.config import get_settings
+from app.core.database import engine
 from app.core.logging import logger
 from app.models.base import Base
-from app.core.database import engine
 from app.websocket.signal_ws import signal_ws_manager
-import asyncio
 
 settings = get_settings()
 
-app = FastAPI(
-    title=settings.app_name,
-    openapi_url="/api/v1/openapi.json",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url=None,
-)
 
-app.include_router(api_router, prefix="/api/v1")
-
-
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ---- startup ----
     logger.info("Starting application...")
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     from app.scheduler.scanner import CryptoScanner
+    from app.scheduler.signal_tracker import SignalTracker
 
-    TOP_SYMBOLS = [
-        "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
-        "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT", "LINKUSDT", "UNIUSDT",
-        "ATOMUSDT", "LTCUSDT", "ETCUSDT", "FILUSDT", "OPUSDT", "ARBUSDT",
-        "APTUSDT", "NEARUSDT", "VETUSDT", "ICPUSDT", "GRTUSDT", "SANDUSDT",
-        "MANAUSDT", "EGLDUSDT", "AAVEUSDT", "ALGOUSDT", "THETAUSDT", "FTMUSDT",
-        "FLOWUSDT", "XTZUSDT", "ENJUSDT", "CHZUSDT", "BATUSDT", "ZILUSDT",
-        "ONEUSDT", "KSMUSDT", "COMPUSDT", "CRVUSDT", "SNXUSDT", "SUSHIUSDT",
-        "YFIUSDT", "ZRXUSDT", "LRCUSDT", "RENUSDT", "BALUSDT", "OCEANUSDT",
-        "COTIUSDT", "CELOUSDT",
-    ]
+    scanner = CryptoScanner()
+    app.state.scanner = scanner
 
-    app.state.scanner = CryptoScanner(TOP_SYMBOLS)
-
-    scanner_task = asyncio.create_task(app.state.scanner.start())
+    scanner_task = asyncio.create_task(scanner.start())
     app.state.scanner_task = scanner_task
 
     def scanner_done(task: asyncio.Task):
         try:
-            exc = task.exception()
-            if exc:
-                logger.exception(f"Scanner task failed: {exc}")
+            if task.exception():
+                logger.exception(f"Scanner task failed: {task.exception()}")
         except asyncio.CancelledError:
             logger.info("Scanner task cancelled.")
 
     scanner_task.add_done_callback(scanner_done)
 
+    tracker = None
+    if settings.tracker_enabled:
+        tracker = SignalTracker(
+            scanner.data_manager, interval_seconds=settings.tracker_interval_seconds
+        )
+        tracker.start()
+    app.state.tracker = tracker
+
     await signal_ws_manager.start_listener()
+    logger.info("Scanner, tracker and WebSocket listener started.")
 
-    logger.info("Scanner and WebSocket listener started.")
+    yield
 
-
-@app.on_event("shutdown")
-async def on_shutdown():
+    # ---- shutdown ----
     logger.info("Shutting down...")
+    if getattr(app.state, "tracker", None):
+        await app.state.tracker.stop()
 
     if hasattr(app.state, "scanner_task"):
-        task = app.state.scanner_task
-        task.cancel()
+        app.state.scanner_task.cancel()
         try:
-            await task
+            await app.state.scanner_task
         except asyncio.CancelledError:
             pass
 
@@ -76,16 +69,32 @@ async def on_shutdown():
         await app.state.scanner.stop()
 
     await signal_ws_manager.stop_listener()
-
     await engine.dispose()
+
+
+app = FastAPI(
+    title=settings.app_name,
+    openapi_url="/api/v1/openapi.json",
+    docs_url="/docs" if settings.debug else None,
+    redoc_url=None,
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.websocket("/ws/signals")
 async def websocket_signals(websocket: WebSocket):
     await signal_ws_manager.connect(websocket)
-
     heartbeat_task = None
-
     try:
 
         async def heartbeat():
@@ -97,16 +106,12 @@ async def websocket_signals(websocket: WebSocket):
                     break
 
         heartbeat_task = asyncio.create_task(heartbeat())
-
         while True:
             await websocket.receive_text()
-
     except WebSocketDisconnect:
         pass
-
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-
     finally:
         if heartbeat_task:
             heartbeat_task.cancel()
@@ -114,5 +119,4 @@ async def websocket_signals(websocket: WebSocket):
                 await heartbeat_task
             except asyncio.CancelledError:
                 pass
-
         signal_ws_manager.disconnect(websocket)

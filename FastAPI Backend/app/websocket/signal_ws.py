@@ -43,13 +43,13 @@ class SignalWebSocketManager:
         self._listener_task = asyncio.create_task(self._listen_loop())
 
     async def _listen_loop(self) -> None:
-        """Listen on Redis 'new_signal' channel with exponential backoff reconnection."""
+        """Listen on Redis signal channels with exponential backoff reconnection."""
         backoff = 1
         while True:
             try:
                 self._pubsub = redis_client.pubsub()
-                await self._pubsub.subscribe("new_signal")
-                logger.info("Redis listener started for new_signal channel")
+                await self._pubsub.subscribe("new_signal", "signal_update")
+                logger.info("Redis listener started for new_signal + signal_update channels")
                 backoff = 1  # reset after a successful connection
                 async for message in self._pubsub.listen():
                     if message["type"] == "message":
@@ -71,7 +71,7 @@ class SignalWebSocketManager:
                 pass
             self._listener_task = None
         if self._pubsub:
-            await self._pubsub.unsubscribe("new_signal")
+            await self._pubsub.unsubscribe("new_signal", "signal_update")
             self._pubsub = None
 
 
