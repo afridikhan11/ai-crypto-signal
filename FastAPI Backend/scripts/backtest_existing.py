@@ -32,7 +32,19 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from typing import Dict, List, Optional
+
+# Make `app` importable no matter how the script is launched (python
+# scripts/x.py adds scripts/ to sys.path, not the project root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# This CLI replays the SignalGenerator over a year of candles, which logs an
+# INFO line per rejected setup — hundreds of thousands of lines that flood the
+# terminal (app.core.logging adds a stdout handler at settings.log_level) and
+# slow the run to a crawl. Default the log level to WARNING BEFORE any app
+# import so that handler is created quiet; an explicit LOG_LEVEL still wins.
+os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 from app.backtest.engine import BacktestEngine
 
@@ -68,6 +80,8 @@ async def main() -> None:
     ap.add_argument("--timeframe", default="15m")
     ap.add_argument("--min-confidence", type=int, default=None,
                     help="override the per-asset default confidence gate")
+    ap.add_argument("--out", default="data/existing_backtest.json",
+                    help="output JSON path (use a distinct name to run several in parallel)")
     args = ap.parse_args()
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -104,8 +118,8 @@ async def main() -> None:
               f"{combined['avg_realized_rr']:>7} {'':>7}")
 
     out = {"params": vars(args), "per_symbol": per_symbol, "combined": combined}
-    os.makedirs("data", exist_ok=True)
-    path = "data/existing_backtest.json"
+    path = args.out
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\nWrote {path}")

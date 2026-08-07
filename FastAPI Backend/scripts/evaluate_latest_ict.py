@@ -40,12 +40,21 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import time
 from collections import defaultdict
 from typing import Dict, List
 
 import httpx
 import pandas as pd
+
+# Make `app` importable no matter how the script is launched (python
+# scripts/x.py adds scripts/ to sys.path, not the project root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Quiet the app's per-candle INFO logging (app.core.logging adds a stdout
+# handler at settings.log_level) BEFORE any app import; explicit LOG_LEVEL wins.
+os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 from app.backtest.engine import fetch_klines_range
 from app.smc.fvg import FVGDetector
@@ -125,6 +134,8 @@ async def main() -> None:
     ap.add_argument("--window", type=int, default=300)
     ap.add_argument("--horizon", type=int, default=16, help="forward candles to measure the move over")
     ap.add_argument("--step", type=int, default=3, help="sample every Nth candle (speed vs coverage)")
+    ap.add_argument("--out", default="data/latest_ict_backtest.json",
+                    help="output JSON path (use a distinct name to run several in parallel)")
     args = ap.parse_args()
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -163,8 +174,8 @@ async def main() -> None:
         "bars_per_symbol": per_symbol_bars,
         "results": rows,
     }
-    os.makedirs("data", exist_ok=True)
-    path = "data/latest_ict_backtest.json"
+    path = args.out
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\nWrote {path} — paste it back for data-driven weighting.")
