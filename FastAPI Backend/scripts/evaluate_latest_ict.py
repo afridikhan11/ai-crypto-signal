@@ -132,13 +132,21 @@ async def main() -> None:
     per_symbol_bars = {}
 
     for sym in symbols:
-        print(f"Loading {sym} {args.interval} ({args.days}d)...")
+        print(f"Loading {sym} {args.interval} (requested {args.days}d)...")
         df = await _load(sym, args.interval, args.days)
-        per_symbol_bars[sym] = len(df)
+        covered_days = (
+            round((df.index[-1] - df.index[0]).total_seconds() / 86_400, 1)
+            if len(df) > 1 else 0.0
+        )
+        per_symbol_bars[sym] = {"bars": len(df), "covered_days": covered_days}
         if len(df) < args.window + args.horizon + 10:
-            print(f"  skipped {sym}: only {len(df)} candles")
+            # Newer listings (e.g. XAUUSDT/commodities) simply don't have a
+            # long history on Binance — use a shorter --days for those.
+            print(f"  skipped {sym}: only {len(df)} candles "
+                  f"({covered_days}d available — try a shorter --days)")
             continue
-        print(f"  {len(df)} candles -> evaluating")
+        first, last = df.index[0].date(), df.index[-1].date()
+        print(f"  {len(df)} candles, {covered_days}d covered ({first} -> {last}) -> evaluating")
         _evaluate_symbol(df, args.window, args.horizon, args.step, stats)
 
     rows = _report(stats)
