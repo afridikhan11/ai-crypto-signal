@@ -263,7 +263,9 @@ class OrderBlockEngine:
     def _displacement_ratio(self, ob_idx: int, confirm_idx: int, direction: str) -> float:
         """How far the confirming candle's close travelled past the OB
         candle's invalidation edge, in local-ATR terms."""
-        if self._atr <= 0:
+        # `not (atr > 0)` also catches NaN (NaN <= 0 is False, so a NaN ATR
+        # would otherwise slip through and propagate NaN into the gate).
+        if not (self._atr > 0):
             return 0.0
         confirm_close = self._close[confirm_idx]
         edge = self._low[ob_idx] if direction == "bullish" else self._high[ob_idx]

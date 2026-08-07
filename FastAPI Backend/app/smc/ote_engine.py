@@ -107,34 +107,54 @@ class OTEEngine:
     # ------------------------------------------------------------------
     @staticmethod
     def _find_leg(snapshot: MarketStructureSnapshot, direction: str, current_price: Optional[float]):
+        # The OTE fib must be measured on the IMPULSE leg that caused the
+        # break, not on a later retracement fragment. Anchor the leg to the
+        # impulse extreme (highest high / lowest low reached) and the swing
+        # that immediately preceded it. Using swing_lows[-1]/swing_highs[-1]
+        # (the most-recent swing) is wrong once a retracement has formed a
+        # fresh counter swing after the break — exactly the moment an OTE
+        # entry is evaluated — because the origin then jumps onto the pullback
+        # and the zone lands on the wrong prices.
         if direction == "bullish":
             if not snapshot.swing_lows:
                 return None
-            leg_start_swing = snapshot.swing_lows[-1]
-            highs_after = [s for s in snapshot.swing_highs if s.index > leg_start_swing.index]
-            if highs_after:
-                leg_end_price = highs_after[-1].price
+            if snapshot.swing_highs:
+                extreme_swing = max(snapshot.swing_highs, key=lambda s: s.price)
+                leg_end_price = extreme_swing.price
+                extreme_index = extreme_swing.index
             elif current_price is not None:
                 leg_end_price = current_price
+                extreme_index = None
             else:
                 return None
-            if leg_end_price <= leg_start_swing.price:
+            lows_before = (
+                [s for s in snapshot.swing_lows if s.index < extreme_index]
+                if extreme_index is not None else snapshot.swing_lows
+            )
+            origin_swing = lows_before[-1] if lows_before else snapshot.swing_lows[-1]
+            if leg_end_price <= origin_swing.price:
                 return None
-            return leg_start_swing.price, leg_end_price
+            return origin_swing.price, leg_end_price
         else:
             if not snapshot.swing_highs:
                 return None
-            leg_start_swing = snapshot.swing_highs[-1]
-            lows_after = [s for s in snapshot.swing_lows if s.index > leg_start_swing.index]
-            if lows_after:
-                leg_end_price = lows_after[-1].price
+            if snapshot.swing_lows:
+                extreme_swing = min(snapshot.swing_lows, key=lambda s: s.price)
+                leg_end_price = extreme_swing.price
+                extreme_index = extreme_swing.index
             elif current_price is not None:
                 leg_end_price = current_price
+                extreme_index = None
             else:
                 return None
-            if leg_end_price >= leg_start_swing.price:
+            highs_before = (
+                [s for s in snapshot.swing_highs if s.index < extreme_index]
+                if extreme_index is not None else snapshot.swing_highs
+            )
+            origin_swing = highs_before[-1] if highs_before else snapshot.swing_highs[-1]
+            if leg_end_price >= origin_swing.price:
                 return None
-            return leg_start_swing.price, leg_end_price
+            return origin_swing.price, leg_end_price
 
     @staticmethod
     def _zone_bounds(direction: str, leg_start: float, leg_end: float):
