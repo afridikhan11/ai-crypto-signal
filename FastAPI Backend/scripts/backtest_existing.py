@@ -80,6 +80,8 @@ async def main() -> None:
     ap.add_argument("--timeframe", default="15m")
     ap.add_argument("--min-confidence", type=int, default=None,
                     help="override the per-asset default confidence gate")
+    ap.add_argument("--out", default="data/existing_backtest.json",
+                    help="output JSON path (use a distinct name to run several in parallel)")
     args = ap.parse_args()
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -116,8 +118,8 @@ async def main() -> None:
               f"{combined['avg_realized_rr']:>7} {'':>7}")
 
     out = {"params": vars(args), "per_symbol": per_symbol, "combined": combined}
-    os.makedirs("data", exist_ok=True)
-    path = "data/existing_backtest.json"
+    path = args.out
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\nWrote {path}")

@@ -134,6 +134,8 @@ async def main() -> None:
     ap.add_argument("--window", type=int, default=300)
     ap.add_argument("--horizon", type=int, default=16, help="forward candles to measure the move over")
     ap.add_argument("--step", type=int, default=3, help="sample every Nth candle (speed vs coverage)")
+    ap.add_argument("--out", default="data/latest_ict_backtest.json",
+                    help="output JSON path (use a distinct name to run several in parallel)")
     args = ap.parse_args()
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -172,8 +174,8 @@ async def main() -> None:
         "bars_per_symbol": per_symbol_bars,
         "results": rows,
     }
-    os.makedirs("data", exist_ok=True)
-    path = "data/latest_ict_backtest.json"
+    path = args.out
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\nWrote {path} — paste it back for data-driven weighting.")
