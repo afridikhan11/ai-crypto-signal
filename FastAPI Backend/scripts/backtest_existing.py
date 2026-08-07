@@ -41,11 +41,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # This CLI replays the SignalGenerator over a year of candles, which logs an
 # INFO line per rejected setup — hundreds of thousands of lines that flood the
-# terminal and slow the run to a crawl. Quiet loguru to WARNING so only the
-# script's own progress/summary (plain print) and real errors show.
-from loguru import logger as _lg  # noqa: E402
-_lg.remove()
-_lg.add(sys.stderr, level="WARNING")
+# terminal (app.core.logging adds a stdout handler at settings.log_level) and
+# slow the run to a crawl. Default the log level to WARNING BEFORE any app
+# import so that handler is created quiet; an explicit LOG_LEVEL still wins.
+os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 from app.backtest.engine import BacktestEngine
 
