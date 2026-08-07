@@ -39,6 +39,14 @@ from typing import Dict, List, Optional
 # scripts/x.py adds scripts/ to sys.path, not the project root).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# This CLI replays the SignalGenerator over a year of candles, which logs an
+# INFO line per rejected setup — hundreds of thousands of lines that flood the
+# terminal and slow the run to a crawl. Quiet loguru to WARNING so only the
+# script's own progress/summary (plain print) and real errors show.
+from loguru import logger as _lg  # noqa: E402
+_lg.remove()
+_lg.add(sys.stderr, level="WARNING")
+
 from app.backtest.engine import BacktestEngine
 
 

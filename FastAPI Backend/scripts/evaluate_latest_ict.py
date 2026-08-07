@@ -52,6 +52,11 @@ import pandas as pd
 # scripts/x.py adds scripts/ to sys.path, not the project root).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Quiet the app's per-candle INFO logging so only this CLI's own output shows.
+from loguru import logger as _lg  # noqa: E402
+_lg.remove()
+_lg.add(sys.stderr, level="WARNING")
+
 from app.backtest.engine import fetch_klines_range
 from app.smc.fvg import FVGDetector
 from app.smc.latest_ict_confluence import LatestICTConfluenceEngine
