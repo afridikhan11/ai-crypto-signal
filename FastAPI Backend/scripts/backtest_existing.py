@@ -32,7 +32,12 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from typing import Dict, List, Optional
+
+# Make `app` importable no matter how the script is launched (python
+# scripts/x.py adds scripts/ to sys.path, not the project root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.backtest.engine import BacktestEngine
 

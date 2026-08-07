@@ -40,12 +40,17 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import time
 from collections import defaultdict
 from typing import Dict, List
 
 import httpx
 import pandas as pd
+
+# Make `app` importable no matter how the script is launched (python
+# scripts/x.py adds scripts/ to sys.path, not the project root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.backtest.engine import fetch_klines_range
 from app.smc.fvg import FVGDetector
