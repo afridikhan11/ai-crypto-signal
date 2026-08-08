@@ -49,7 +49,7 @@ WHAT EACH PROFILE CONTROLS
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict
 
@@ -90,8 +90,23 @@ class CalibrationProfile:
     # Volume threshold (ConfirmationIndicators volume_spike)
     volume_spike_multiplier: float
 
+    # Data-driven latest-ICT confluence bonus (see matrix backtest,
+    # scripts/backtest_matrix.py). Maps a confluence-engine name (exactly as
+    # emitted by app/smc/latest_ict_confluence.py) to the confidence points it
+    # ADDS when its directional signal agrees with the trade direction. Only
+    # engines whose edge was proven ON THIS ASSET CLASS get a non-zero weight;
+    # every other engine (and every asset with an empty map) contributes
+    # nothing, so live behavior there is byte-for-byte unchanged. The total
+    # bonus across all aligned engines is capped at confluence_bonus_cap.
+    confluence_weights: Dict[str, float] = field(default_factory=dict)
+    confluence_bonus_cap: float = 6.0
 
-def _profile(asset_type: str, weights_filename: str) -> CalibrationProfile:
+
+def _profile(
+    asset_type: str,
+    weights_filename: str,
+    confluence_weights: Dict[str, float] | None = None,
+) -> CalibrationProfile:
     """
     Every numeric value here is this project's EXISTING, already-tuned
     default (previously hardcoded as global constants in
@@ -117,11 +132,32 @@ def _profile(asset_type: str, weights_filename: str) -> CalibrationProfile:
         volatility_high_ratio=1.5,
         volatility_low_ratio=0.7,
         volume_spike_multiplier=1.5,
+        confluence_weights=dict(confluence_weights or {}),
     )
 
 
-CRYPTO_PROFILE = _profile(ASSET_TYPE_CRYPTO, "ai_scorer_weights_crypto.json")
-GOLD_PROFILE = _profile(ASSET_TYPE_GOLD, "ai_scorer_weights_gold.json")
+# Data-driven per-asset confluence weights from the matrix backtest
+# (scripts/backtest_matrix.py, run over BTC/ETH/SOL and XAUUSDT across
+# 15m/1h/4h and 1M..3Y). Only engines with a robust, well-sampled, positive
+# forward-return edge on that asset class get weight:
+#   - Crypto: Judas Swing (New York) was positive across every timeframe and
+#     every duration (strongest on 1h); Turtle Soup was consistently positive
+#     on 4h. Power of 3 was NEGATIVE on crypto and gets nothing.
+#   - Gold: Power of 3 was positive across every timeframe/duration; Judas
+#     Swing did not work on gold and gets nothing.
+# Engine names must match app/smc/latest_ict_confluence.py exactly.
+_CRYPTO_CONFLUENCE_WEIGHTS = {
+    "Judas Swing (new_york)": 5.0,
+    "Turtle Soup": 2.0,
+}
+_GOLD_CONFLUENCE_WEIGHTS = {
+    "Power of 3": 5.0,
+}
+
+CRYPTO_PROFILE = _profile(ASSET_TYPE_CRYPTO, "ai_scorer_weights_crypto.json",
+                          _CRYPTO_CONFLUENCE_WEIGHTS)
+GOLD_PROFILE = _profile(ASSET_TYPE_GOLD, "ai_scorer_weights_gold.json",
+                        _GOLD_CONFLUENCE_WEIGHTS)
 SILVER_PROFILE = _profile(ASSET_TYPE_SILVER, "ai_scorer_weights_silver.json")
 OIL_PROFILE = _profile(ASSET_TYPE_OIL, "ai_scorer_weights_oil.json")
 # No forex symbols exist yet (see app.core.constants.SYMBOL_TO_ASSET_TYPE) -

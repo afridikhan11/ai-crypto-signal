@@ -100,6 +100,28 @@ from app.models.signal import Direction
 from app.services.trading_settings import is_ict_pending_entry
 
 
+def aligned_confluence_bonus(signals, direction, weights, cap) -> float:
+    """Confidence points from proven latest-ICT engines that agree with the
+    trade direction.
+
+    Sums each engine's per-asset weight (`weights`, from the symbol's
+    CalibrationProfile - populated only for engines whose forward-return edge
+    was proven on that asset class in the matrix backtest) for every signal
+    whose bias equals `direction`, then bounds the total by `cap`.
+
+    Pure and total: an empty weight map (an asset with no measured edge) or no
+    signals always returns 0.0, so those paths are byte-for-byte unchanged.
+    """
+    if not weights or not signals:
+        return 0.0
+    bonus = sum(
+        weights.get(s.name, 0.0)
+        for s in signals
+        if s.bias == direction
+    )
+    return min(max(0.0, bonus), cap)
+
+
 class SignalGenerator:
     def __init__(self, symbol: str, asset_profile: Optional[AssetProfile] = None):
         self.symbol = symbol
@@ -622,8 +644,9 @@ class SignalGenerator:
         # as supplementary evidence notes. Never raises into the signal path,
         # and never touches the calibrated scorer.
         confluence_notes: List[str] = []
+        _dir = "bullish" if direction == Direction.LONG else "bearish"
+        _confluence = None
         try:
-            _dir = "bullish" if direction == Direction.LONG else "bearish"
             _confluence = self.latest_ict_confluence.analyze(
                 df, direction=_dir, fvgs=relevant_fvgs, order_blocks=[ob] if ob else None,
             )
@@ -696,6 +719,32 @@ class SignalGenerator:
 
         # AI Confidence Engine.
         confidence, reason, score_breakdown = self.ai_scorer.assess(features)
+
+        # Data-driven latest-ICT confluence bonus. Engines whose forward-return
+        # edge was proven on THIS asset class in the matrix backtest
+        # (scripts/backtest_matrix.py) nudge confidence up when their signal
+        # agrees with the trade direction. Per-asset and bounded via the
+        # calibration profile; assets/engines with no measured edge carry an
+        # empty weight map, so their behavior is unchanged. Advisory-safe: any
+        # failure leaves confidence exactly as the scorer produced it.
+        try:
+            if _confluence is not None:
+                bonus = aligned_confluence_bonus(
+                    _confluence.signals, _dir,
+                    self.profile.confluence_weights,
+                    self.profile.confluence_bonus_cap,
+                )
+                if bonus > 0:
+                    adjusted = min(100, int(round(confidence + bonus)))
+                    if adjusted != confidence:
+                        logger.info(
+                            f"{self.symbol}: +{bonus:.1f} confluence bonus "
+                            f"(proven ICT engines aligned) -> confidence "
+                            f"{confidence} -> {adjusted}"
+                        )
+                        confidence = adjusted
+        except Exception as _e:  # noqa: BLE001 - confluence bonus is advisory
+            logger.debug(f"{self.symbol}: confluence bonus skipped: {_e}")
 
         # ------------------------------------------------------------------
         # Hard gates - ALL evaluated, none short-circuited, so a rejection
