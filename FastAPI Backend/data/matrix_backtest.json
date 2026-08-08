@@ -1,0 +1,890 @@
+{
+  "params": {
+    "symbols": "BTCUSDT,ETHUSDT,SOLUSDT",
+    "timeframes": "15m,1h,4h",
+    "durations": "30,90,180,365,730,1095",
+    "mode": "new",
+    "horizon": 16,
+    "step": 3,
+    "window": 300,
+    "top": 6,
+    "out": "data/matrix_backtest.json"
+  },
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "timeframes": [
+    "15m",
+    "1h",
+    "4h"
+  ],
+  "durations": [
+    30,
+    90,
+    180,
+    365,
+    730,
+    1095
+  ],
+  "new": {
+    "15m": {
+      "1M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 482,
+          "hit_rate": 48.8,
+          "expectancy_pct": 0.0807
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 505,
+          "hit_rate": 58.2,
+          "expectancy_pct": 0.0688
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 479,
+          "hit_rate": 56.4,
+          "expectancy_pct": 0.0385
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 47,
+          "hit_rate": 57.4,
+          "expectancy_pct": 0.0316
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 2565,
+          "hit_rate": 50.1,
+          "expectancy_pct": 0.0142
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 2565,
+          "hit_rate": 51.4,
+          "expectancy_pct": -0.0065
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 2514,
+          "hit_rate": 48.0,
+          "expectancy_pct": -0.0168
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 2514,
+          "hit_rate": 50.9,
+          "expectancy_pct": -0.017
+        }
+      ],
+      "3M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 1856,
+          "hit_rate": 51.8,
+          "expectancy_pct": 0.0701
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 1567,
+          "hit_rate": 53.2,
+          "expectancy_pct": 0.06
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 8152,
+          "hit_rate": 51.0,
+          "expectancy_pct": 0.0196
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 8325,
+          "hit_rate": 49.2,
+          "expectancy_pct": -0.0026
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 8325,
+          "hit_rate": 50.4,
+          "expectancy_pct": -0.0175
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 1563,
+          "hit_rate": 49.2,
+          "expectancy_pct": -0.0346
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 8224,
+          "hit_rate": 47.8,
+          "expectancy_pct": -0.0372
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 120,
+          "hit_rate": 56.7,
+          "expectancy_pct": -0.04
+        }
+      ],
+      "6M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 3678,
+          "hit_rate": 50.9,
+          "expectancy_pct": 0.0752
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 3117,
+          "hit_rate": 52.5,
+          "expectancy_pct": 0.0138
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 16965,
+          "hit_rate": 49.1,
+          "expectancy_pct": 0.0114
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 16639,
+          "hit_rate": 51.3,
+          "expectancy_pct": 0.0046
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 16965,
+          "hit_rate": 50.4,
+          "expectancy_pct": 0.0028
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 3486,
+          "hit_rate": 48.6,
+          "expectancy_pct": -0.0074
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 237,
+          "hit_rate": 50.6,
+          "expectancy_pct": -0.0399
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 16754,
+          "hit_rate": 47.1,
+          "expectancy_pct": -0.0491
+        }
+      ],
+      "1Y": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 7621,
+          "hit_rate": 49.7,
+          "expectancy_pct": 0.0314
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 34725,
+          "hit_rate": 49.1,
+          "expectancy_pct": 0.019
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 34057,
+          "hit_rate": 51.9,
+          "expectancy_pct": 0.0008
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 434,
+          "hit_rate": 50.0,
+          "expectancy_pct": -0.0015
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 34725,
+          "hit_rate": 49.9,
+          "expectancy_pct": -0.006
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 6467,
+          "hit_rate": 51.7,
+          "expectancy_pct": -0.0138
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 7072,
+          "hit_rate": 48.4,
+          "expectancy_pct": -0.0245
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 34192,
+          "hit_rate": 47.6,
+          "expectancy_pct": -0.0311
+        }
+      ],
+      "2Y": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 750,
+          "hit_rate": 50.8,
+          "expectancy_pct": 0.0185
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 69765,
+          "hit_rate": 49.6,
+          "expectancy_pct": 0.0162
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 15064,
+          "hit_rate": 48.9,
+          "expectancy_pct": 0.016
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 68470,
+          "hit_rate": 51.2,
+          "expectancy_pct": -0.0086
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 13365,
+          "hit_rate": 51.2,
+          "expectancy_pct": -0.0125
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 69765,
+          "hit_rate": 50.0,
+          "expectancy_pct": -0.0174
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 68928,
+          "hit_rate": 47.8,
+          "expectancy_pct": -0.0229
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 14474,
+          "hit_rate": 48.9,
+          "expectancy_pct": -0.0259
+        }
+      ],
+      "3Y": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 1043,
+          "hit_rate": 48.9,
+          "expectancy_pct": 0.0446
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 104805,
+          "hit_rate": 49.6,
+          "expectancy_pct": 0.0094
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 22447,
+          "hit_rate": 48.7,
+          "expectancy_pct": 0.0068
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 19889,
+          "hit_rate": 52.1,
+          "expectancy_pct": 0.0013
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 102750,
+          "hit_rate": 51.5,
+          "expectancy_pct": -0.0098
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 104805,
+          "hit_rate": 50.1,
+          "expectancy_pct": -0.0102
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 21902,
+          "hit_rate": 48.8,
+          "expectancy_pct": -0.0152
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 102966,
+          "hit_rate": 48.2,
+          "expectancy_pct": -0.0153
+        }
+      ]
+    },
+    "1h": {
+      "1M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 76,
+          "hit_rate": 53.9,
+          "expectancy_pct": 0.3794
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 405,
+          "hit_rate": 56.8,
+          "expectancy_pct": 0.2804
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 79,
+          "hit_rate": 53.2,
+          "expectancy_pct": 0.1898
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 5,
+          "hit_rate": 40.0,
+          "expectancy_pct": 0.178
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 394,
+          "hit_rate": 54.3,
+          "expectancy_pct": 0.0301
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 405,
+          "hit_rate": 48.9,
+          "expectancy_pct": -0.064
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 104,
+          "hit_rate": 51.9,
+          "expectancy_pct": -0.0661
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 383,
+          "hit_rate": 47.0,
+          "expectancy_pct": -0.0705
+        }
+      ],
+      "3M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 418,
+          "hit_rate": 61.0,
+          "expectancy_pct": 0.6107
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 21,
+          "hit_rate": 42.9,
+          "expectancy_pct": 0.2456
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 359,
+          "hit_rate": 45.7,
+          "expectancy_pct": 0.1001
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 1741,
+          "hit_rate": 50.1,
+          "expectancy_pct": 0.0441
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 1845,
+          "hit_rate": 49.7,
+          "expectancy_pct": 0.0146
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 1845,
+          "hit_rate": 48.9,
+          "expectancy_pct": -0.0982
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 1809,
+          "hit_rate": 49.1,
+          "expectancy_pct": -0.1735
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 361,
+          "hit_rate": 44.0,
+          "expectancy_pct": -0.3537
+        }
+      ],
+      "6M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 914,
+          "hit_rate": 55.3,
+          "expectancy_pct": 0.392
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 3939,
+          "hit_rate": 52.8,
+          "expectancy_pct": 0.0581
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 815,
+          "hit_rate": 47.1,
+          "expectancy_pct": 0.0317
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 4005,
+          "hit_rate": 49.1,
+          "expectancy_pct": -0.0092
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 768,
+          "hit_rate": 49.7,
+          "expectancy_pct": -0.0304
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 4005,
+          "hit_rate": 48.9,
+          "expectancy_pct": -0.0436
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 3770,
+          "hit_rate": 48.0,
+          "expectancy_pct": -0.0801
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 46,
+          "hit_rate": 43.5,
+          "expectancy_pct": -0.2425
+        }
+      ],
+      "1Y": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 122,
+          "hit_rate": 45.1,
+          "expectancy_pct": 0.2659
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 1964,
+          "hit_rate": 51.4,
+          "expectancy_pct": 0.1477
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 8286,
+          "hit_rate": 51.8,
+          "expectancy_pct": 0.0415
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 7907,
+          "hit_rate": 49.0,
+          "expectancy_pct": -0.0032
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 8445,
+          "hit_rate": 49.0,
+          "expectancy_pct": -0.0307
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 8445,
+          "hit_rate": 49.1,
+          "expectancy_pct": -0.0542
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 1582,
+          "hit_rate": 49.9,
+          "expectancy_pct": -0.0647
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 1756,
+          "hit_rate": 47.6,
+          "expectancy_pct": -0.0866
+        }
+      ],
+      "2Y": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 238,
+          "hit_rate": 44.5,
+          "expectancy_pct": 0.1524
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 3877,
+          "hit_rate": 50.8,
+          "expectancy_pct": 0.0519
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 17205,
+          "hit_rate": 49.7,
+          "expectancy_pct": 0.0421
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 16879,
+          "hit_rate": 51.3,
+          "expectancy_pct": -0.0092
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 16141,
+          "hit_rate": 48.2,
+          "expectancy_pct": -0.0339
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 3371,
+          "hit_rate": 50.7,
+          "expectancy_pct": -0.0373
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 17205,
+          "hit_rate": 49.2,
+          "expectancy_pct": -0.05
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 3649,
+          "hit_rate": 46.5,
+          "expectancy_pct": -0.1077
+        }
+      ],
+      "3Y": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 341,
+          "hit_rate": 54.3,
+          "expectancy_pct": 0.1085
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 25965,
+          "hit_rate": 49.4,
+          "expectancy_pct": 0.0374
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 4943,
+          "hit_rate": 52.3,
+          "expectancy_pct": 0.0067
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 5466,
+          "hit_rate": 49.9,
+          "expectancy_pct": -0.0031
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 23149,
+          "hit_rate": 48.2,
+          "expectancy_pct": -0.013
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 25965,
+          "hit_rate": 49.8,
+          "expectancy_pct": -0.0197
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 25418,
+          "hit_rate": 51.1,
+          "expectancy_pct": -0.0473
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 5280,
+          "hit_rate": 47.7,
+          "expectancy_pct": -0.1522
+        }
+      ]
+    },
+    "4h": {
+      "1M": [],
+      "3M": [
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 56,
+          "hit_rate": 60.7,
+          "expectancy_pct": 1.205
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 225,
+          "hit_rate": 60.9,
+          "expectancy_pct": 0.7648
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 223,
+          "hit_rate": 59.2,
+          "expectancy_pct": 0.3928
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 40,
+          "hit_rate": 55.0,
+          "expectancy_pct": 0.3069
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 29,
+          "hit_rate": 51.7,
+          "expectancy_pct": 0.2588
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 181,
+          "hit_rate": 43.1,
+          "expectancy_pct": -0.2153
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 225,
+          "hit_rate": 41.3,
+          "expectancy_pct": -0.3594
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 1,
+          "hit_rate": 0.0,
+          "expectancy_pct": -2.8369
+        }
+      ],
+      "6M": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 5,
+          "hit_rate": 60.0,
+          "expectancy_pct": 0.4049
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 765,
+          "hit_rate": 47.2,
+          "expectancy_pct": 0.155
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 765,
+          "hit_rate": 52.4,
+          "expectancy_pct": 0.0675
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 128,
+          "hit_rate": 58.6,
+          "expectancy_pct": 0.0322
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 207,
+          "hit_rate": 50.2,
+          "expectancy_pct": 0.0251
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 118,
+          "hit_rate": 50.8,
+          "expectancy_pct": -0.1038
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 627,
+          "hit_rate": 44.8,
+          "expectancy_pct": -0.1655
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 754,
+          "hit_rate": 53.7,
+          "expectancy_pct": -0.2157
+        }
+      ],
+      "1Y": [
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 299,
+          "hit_rate": 56.5,
+          "expectancy_pct": 0.3784
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 1851,
+          "hit_rate": 55.5,
+          "expectancy_pct": 0.2195
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 322,
+          "hit_rate": 57.1,
+          "expectancy_pct": 0.0769
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 1875,
+          "hit_rate": 47.4,
+          "expectancy_pct": -0.0378
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 1875,
+          "hit_rate": 50.6,
+          "expectancy_pct": -0.1176
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 1530,
+          "hit_rate": 47.5,
+          "expectancy_pct": -0.291
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 503,
+          "hit_rate": 45.3,
+          "expectancy_pct": -0.3895
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 14,
+          "hit_rate": 35.7,
+          "expectancy_pct": -0.6355
+        }
+      ],
+      "2Y": [
+        {
+          "engine": "Turtle Soup",
+          "signals": 760,
+          "hit_rate": 55.1,
+          "expectancy_pct": 0.1508
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 4002,
+          "hit_rate": 53.8,
+          "expectancy_pct": 0.1007
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 633,
+          "hit_rate": 50.6,
+          "expectancy_pct": -0.0255
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 4065,
+          "hit_rate": 50.4,
+          "expectancy_pct": -0.0386
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 3349,
+          "hit_rate": 49.0,
+          "expectancy_pct": -0.0441
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 4065,
+          "hit_rate": 47.6,
+          "expectancy_pct": -0.1761
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 1071,
+          "hit_rate": 49.6,
+          "expectancy_pct": -0.2112
+        },
+        {
+          "engine": "Liquidity Void",
+          "signals": 46,
+          "hit_rate": 45.7,
+          "expectancy_pct": -0.3338
+        }
+      ],
+      "3Y": [
+        {
+          "engine": "Liquidity Void",
+          "signals": 71,
+          "hit_rate": 59.2,
+          "expectancy_pct": 0.9715
+        },
+        {
+          "engine": "Turtle Soup",
+          "signals": 1180,
+          "hit_rate": 54.4,
+          "expectancy_pct": 0.0925
+        },
+        {
+          "engine": "Power of 3",
+          "signals": 5722,
+          "hit_rate": 49.9,
+          "expectancy_pct": 0.047
+        },
+        {
+          "engine": "Mitigation Block",
+          "signals": 6255,
+          "hit_rate": 48.7,
+          "expectancy_pct": 0.0208
+        },
+        {
+          "engine": "Rejection Block",
+          "signals": 6255,
+          "hit_rate": 50.2,
+          "expectancy_pct": -0.0315
+        },
+        {
+          "engine": "Judas Swing (london)",
+          "signals": 2060,
+          "hit_rate": 49.6,
+          "expectancy_pct": -0.0443
+        },
+        {
+          "engine": "Judas Swing (new_york)",
+          "signals": 1689,
+          "hit_rate": 49.3,
+          "expectancy_pct": -0.0831
+        },
+        {
+          "engine": "IPDA Range",
+          "signals": 6157,
+          "hit_rate": 52.0,
+          "expectancy_pct": -0.0849
+        }
+      ]
+    }
+  }
+}
