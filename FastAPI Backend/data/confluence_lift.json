@@ -1,0 +1,228 @@
+{
+  "params": {
+    "symbols": "BTCUSDT,ETHUSDT,SOLUSDT",
+    "interval": "1h",
+    "days": 365,
+    "window": 300,
+    "horizon": 16,
+    "step": 3,
+    "min_signals": 30,
+    "out": "data/confluence_lift.json"
+  },
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "per_symbol": {
+    "BTCUSDT": {
+      "bars": 8760,
+      "covered_days": 365.0,
+      "evaluated": true
+    },
+    "ETHUSDT": {
+      "bars": 8760,
+      "covered_days": 365.0,
+      "evaluated": true
+    },
+    "SOLUSDT": {
+      "bars": 8760,
+      "covered_days": 365.0,
+      "evaluated": true
+    }
+  },
+  "results": [
+    {
+      "engine": "Liquidity Void",
+      "standalone": {
+        "signals": 112,
+        "hit_rate": 48.2,
+        "expectancy_pct": -0.1217
+      },
+      "+structure": {
+        "signals": 80,
+        "hit_rate": 51.2,
+        "expectancy_pct": -0.1747
+      },
+      "+zone": {
+        "signals": 12,
+        "hit_rate": 41.7,
+        "expectancy_pct": 0.037
+      },
+      "+both": {
+        "signals": 7,
+        "hit_rate": 57.1,
+        "expectancy_pct": 0.5178
+      },
+      "lift_pct": 0.6395
+    },
+    {
+      "engine": "Turtle Soup",
+      "standalone": {
+        "signals": 1548,
+        "hit_rate": 48.3,
+        "expectancy_pct": -0.1073
+      },
+      "+structure": {
+        "signals": 79,
+        "hit_rate": 58.2,
+        "expectancy_pct": 0.35
+      },
+      "+zone": {
+        "signals": 1098,
+        "hit_rate": 50.5,
+        "expectancy_pct": -0.0269
+      },
+      "+both": {
+        "signals": 56,
+        "hit_rate": 62.5,
+        "expectancy_pct": 0.4473
+      },
+      "lift_pct": 0.5546
+    },
+    {
+      "engine": "IPDA Range",
+      "standalone": {
+        "signals": 8269,
+        "hit_rate": 51.0,
+        "expectancy_pct": 0.0086
+      },
+      "+structure": {
+        "signals": 549,
+        "hit_rate": 56.3,
+        "expectancy_pct": 0.4962
+      },
+      "+zone": {
+        "signals": 6529,
+        "hit_rate": 51.9,
+        "expectancy_pct": 0.0572
+      },
+      "+both": {
+        "signals": 474,
+        "hit_rate": 56.8,
+        "expectancy_pct": 0.526
+      },
+      "lift_pct": 0.5174
+    },
+    {
+      "engine": "Mitigation Block",
+      "standalone": {
+        "signals": 8445,
+        "hit_rate": 49.1,
+        "expectancy_pct": -0.0392
+      },
+      "+structure": {
+        "signals": 2971,
+        "hit_rate": 50.5,
+        "expectancy_pct": 0.1023
+      },
+      "+zone": {
+        "signals": 3410,
+        "hit_rate": 51.3,
+        "expectancy_pct": 0.0506
+      },
+      "+both": {
+        "signals": 705,
+        "hit_rate": 54.3,
+        "expectancy_pct": 0.3082
+      },
+      "lift_pct": 0.3474
+    },
+    {
+      "engine": "Rejection Block",
+      "standalone": {
+        "signals": 8445,
+        "hit_rate": 49.6,
+        "expectancy_pct": -0.0239
+      },
+      "+structure": {
+        "signals": 2070,
+        "hit_rate": 50.1,
+        "expectancy_pct": 0.1047
+      },
+      "+zone": {
+        "signals": 4553,
+        "hit_rate": 51.4,
+        "expectancy_pct": 0.0521
+      },
+      "+both": {
+        "signals": 668,
+        "hit_rate": 52.2,
+        "expectancy_pct": 0.2314
+      },
+      "lift_pct": 0.2553
+    },
+    {
+      "engine": "Power of 3",
+      "standalone": {
+        "signals": 7781,
+        "hit_rate": 48.7,
+        "expectancy_pct": -0.013
+      },
+      "+structure": {
+        "signals": 3549,
+        "hit_rate": 49.4,
+        "expectancy_pct": 0.0928
+      },
+      "+zone": {
+        "signals": 2723,
+        "hit_rate": 51.5,
+        "expectancy_pct": 0.1227
+      },
+      "+both": {
+        "signals": 939,
+        "hit_rate": 51.3,
+        "expectancy_pct": 0.1871
+      },
+      "lift_pct": 0.2001
+    },
+    {
+      "engine": "Judas Swing (london)",
+      "standalone": {
+        "signals": 1733,
+        "hit_rate": 47.3,
+        "expectancy_pct": -0.1667
+      },
+      "+structure": {
+        "signals": 485,
+        "hit_rate": 47.8,
+        "expectancy_pct": -0.0916
+      },
+      "+zone": {
+        "signals": 768,
+        "hit_rate": 52.1,
+        "expectancy_pct": 0.0415
+      },
+      "+both": {
+        "signals": 158,
+        "hit_rate": 48.7,
+        "expectancy_pct": -0.0237
+      },
+      "lift_pct": 0.143
+    },
+    {
+      "engine": "Judas Swing (new_york)",
+      "standalone": {
+        "signals": 1834,
+        "hit_rate": 51.6,
+        "expectancy_pct": 0.1607
+      },
+      "+structure": {
+        "signals": 521,
+        "hit_rate": 48.9,
+        "expectancy_pct": 0.0377
+      },
+      "+zone": {
+        "signals": 742,
+        "hit_rate": 54.0,
+        "expectancy_pct": 0.2091
+      },
+      "+both": {
+        "signals": 140,
+        "hit_rate": 55.0,
+        "expectancy_pct": 0.2393
+      },
+      "lift_pct": 0.0786
+    }
+  ]
+}
