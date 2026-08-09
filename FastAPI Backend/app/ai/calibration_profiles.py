@@ -91,15 +91,16 @@ class CalibrationProfile:
     volume_spike_multiplier: float
 
     # Data-driven latest-ICT confluence bonus (see matrix backtest,
-    # scripts/backtest_matrix.py). Maps a confluence-engine name (exactly as
-    # emitted by app/smc/latest_ict_confluence.py) to the confidence points it
-    # ADDS when its directional signal agrees with the trade direction. Only
-    # engines whose edge was proven ON THIS ASSET CLASS get a non-zero weight;
-    # every other engine (and every asset with an empty map) contributes
-    # nothing, so live behavior there is byte-for-byte unchanged. The total
-    # bonus across all aligned engines is capped at confluence_bonus_cap.
+    # scripts/backtest_matrix.py + scripts/evaluate_confluence_lift.py). Maps a
+    # confluence-engine name (exactly as emitted by
+    # app/smc/latest_ict_confluence.py) to the confidence points it ADDS when
+    # its directional signal agrees with the trade direction. Only engines whose
+    # edge was proven ON THIS ASSET CLASS get a non-zero weight; every other
+    # engine (and every asset with an empty map) contributes nothing, so live
+    # behavior there is byte-for-byte unchanged. The total bonus across all
+    # aligned engines is capped at confluence_bonus_cap.
     confluence_weights: Dict[str, float] = field(default_factory=dict)
-    confluence_bonus_cap: float = 6.0
+    confluence_bonus_cap: float = 8.0
 
 
 def _profile(
@@ -136,22 +137,41 @@ def _profile(
     )
 
 
-# Data-driven per-asset confluence weights from the matrix backtest
-# (scripts/backtest_matrix.py, run over BTC/ETH/SOL and XAUUSDT across
-# 15m/1h/4h and 1M..3Y). Only engines with a robust, well-sampled, positive
-# forward-return edge on that asset class get weight:
-#   - Crypto: Judas Swing (New York) was positive across every timeframe and
-#     every duration (strongest on 1h); Turtle Soup was consistently positive
-#     on 4h. Power of 3 was NEGATIVE on crypto and gets nothing.
-#   - Gold: Power of 3 was positive across every timeframe/duration; Judas
-#     Swing did not work on gold and gets nothing.
-# Engine names must match app/smc/latest_ict_confluence.py exactly.
+# Data-driven per-asset confluence weights.
+#
+# Sized from the CONFLUENCE-LIFT test (scripts/evaluate_confluence_lift.py, 1h,
+# BTC/ETH/SOL and XAUUSDT), which measures each engine's forward-return edge
+# *when it agrees with the core Group A read* (market-structure bias) - i.e. the
+# exact condition under which this bonus fires live (engine bias == trade
+# direction). This is the right basis: an engine that looks flat ALONE (in the
+# matrix --mode new test) can still be a strong confirmation in context.
+#
+# Findings (in-context / +structure expectancy, larger = better):
+#   Crypto: IPDA Range +0.50 was the biggest; Turtle Soup +0.35; Judas Swing
+#     (NY) already had standalone edge and improved further; Rejection Block,
+#     Mitigation Block and Power of 3 all FLIPPED from ~0/negative standalone to
+#     clearly positive in context. Judas Swing (London) stayed negative and
+#     Liquidity Void had too few samples -> both excluded.
+#   Gold: Power of 3 dominated (+0.24); IPDA Range, Rejection Block and
+#     Mitigation Block were positive in context; Judas Swing and Turtle Soup do
+#     NOT work on gold (negative) -> excluded. (Note this is the mirror image of
+#     crypto, which is exactly why the maps are per-asset.)
+#
+# Weights are edge-proportional and intentionally easy to retune here as more
+# data arrives. Engine names must match app/smc/latest_ict_confluence.py exactly.
 _CRYPTO_CONFLUENCE_WEIGHTS = {
-    "Judas Swing (new_york)": 5.0,
-    "Turtle Soup": 2.0,
+    "IPDA Range": 5.0,
+    "Judas Swing (new_york)": 3.0,
+    "Turtle Soup": 3.0,
+    "Mitigation Block": 2.0,
+    "Rejection Block": 2.0,
+    "Power of 3": 2.0,
 }
 _GOLD_CONFLUENCE_WEIGHTS = {
     "Power of 3": 5.0,
+    "IPDA Range": 2.0,
+    "Rejection Block": 2.0,
+    "Mitigation Block": 1.0,
 }
 
 CRYPTO_PROFILE = _profile(ASSET_TYPE_CRYPTO, "ai_scorer_weights_crypto.json",

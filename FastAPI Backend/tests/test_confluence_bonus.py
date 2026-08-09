@@ -29,17 +29,30 @@ class _Sig:
 
 
 class TestPerAssetWeights:
-    def test_crypto_weights_are_the_proven_engines(self):
+    def test_crypto_weights_are_the_in_context_proven_engines(self):
         w = get_profile_for_symbol("BTCUSDT").confluence_weights
-        assert w == {"Judas Swing (new_york)": 5.0, "Turtle Soup": 2.0}
-        # Power of 3 was NEGATIVE on crypto - it must NOT carry weight here.
-        assert "Power of 3" not in w
+        assert w == {
+            "IPDA Range": 5.0,
+            "Judas Swing (new_york)": 3.0,
+            "Turtle Soup": 3.0,
+            "Mitigation Block": 2.0,
+            "Rejection Block": 2.0,
+            "Power of 3": 2.0,
+        }
+        # Judas Swing (London) stayed negative in context -> no weight on crypto.
+        assert "Judas Swing (london)" not in w
 
-    def test_gold_weights_are_the_proven_engine(self):
+    def test_gold_weights_are_the_in_context_proven_engines(self):
         w = get_profile_for_symbol("XAUUSDT").confluence_weights
-        assert w == {"Power of 3": 5.0}
-        # Judas Swing did not work on gold.
+        assert w == {
+            "Power of 3": 5.0,
+            "IPDA Range": 2.0,
+            "Rejection Block": 2.0,
+            "Mitigation Block": 1.0,
+        }
+        # Judas Swing / Turtle Soup do NOT work on gold (mirror image of crypto).
         assert "Judas Swing (new_york)" not in w
+        assert "Turtle Soup" not in w
 
     def test_other_assets_carry_no_weight_so_behavior_is_unchanged(self):
         for sym in ("XAGUSDT", "CLUSDT", "BZUSDT"):
