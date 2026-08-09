@@ -33,6 +33,7 @@ from app.smc.power_of_three import PowerOfThreeEngine
 from app.smc.opening_gaps import OpeningGapEngine
 from app.smc.liquidity_void import LiquidityVoidEngine
 from app.smc.ipda_ranges import IPDAEngine
+from app.smc.smt_divergence import SMTDivergenceEngine
 
 
 @dataclass
@@ -85,6 +86,7 @@ class LatestICTConfluenceEngine:
         self.opening_gaps = OpeningGapEngine()
         self.void = LiquidityVoidEngine()
         self.ipda = IPDAEngine()
+        self.smt = SMTDivergenceEngine()
 
     def analyze(
         self,
@@ -92,6 +94,9 @@ class LatestICTConfluenceEngine:
         direction: Optional[str] = None,
         fvgs: Optional[List] = None,
         order_blocks: Optional[List] = None,
+        reference_df: Optional[pd.DataFrame] = None,
+        symbol: str = "PRIMARY",
+        reference_symbol: str = "REFERENCE",
     ) -> LatestICTConfluenceReport:
         report = LatestICTConfluenceReport()
         if df is None or df.empty:
@@ -167,5 +172,14 @@ class LatestICTConfluenceEngine:
             if consensus in ("premium", "discount"):
                 add(ConfluenceSignal("IPDA Range", "bearish" if consensus == "premium" else "bullish",
                                      f"{consensus} of 20/40/60 dealing range"))
+
+        # --- Cross-asset (SMT divergence) ---
+        # Only runs when a correlated reference frame is supplied; single-symbol
+        # callers pass none and this contributes nothing, exactly like any other
+        # engine that finds no setup.
+        if reference_df is not None:
+            smt = self.smt.analyze(df, reference_df, symbol, reference_symbol)
+            if smt is not None:
+                add(ConfluenceSignal("SMT Divergence", smt.bias, smt.detail))
 
         return report
