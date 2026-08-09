@@ -207,11 +207,25 @@ _PROFILES_BY_ASSET_TYPE: Dict[str, CalibrationProfile] = {
 # app/backtest/engine.py) and always uses each profile's real 85, or an
 # explicit min_confidence request param unrelated to this constant.
 #
-# This exists so 60 is hardcoded in exactly ONE place. Remove this
-# constant and its callers (UniversalScanner._apply_testnet_confidence_
-# override, and effective_min_confidence() below) once Testnet validation
-# is complete.
-TESTNET_MIN_CONFIDENCE = 60
+# This exists so the Testnet confidence gate is resolved in exactly ONE place.
+# Remove this constant and its callers (UniversalScanner._apply_testnet_
+# confidence_override, and effective_min_confidence() below) once Testnet
+# validation is complete.
+#
+# Tunable via the TESTNET_MIN_CONFIDENCE env var (read once at import; the
+# container sets env from .env). Raise it for FEWER but higher-conviction
+# Testnet trades (e.g. 70), lower it for more. Mainnet is unaffected (always
+# each asset's own 85). Clamped to a sane 1..99.
+def _resolve_testnet_min_confidence() -> int:
+    import os
+    try:
+        value = int(os.getenv("TESTNET_MIN_CONFIDENCE", "60"))
+    except (TypeError, ValueError):
+        return 60
+    return max(1, min(99, value))
+
+
+TESTNET_MIN_CONFIDENCE = _resolve_testnet_min_confidence()
 
 
 def effective_min_confidence(base_min_confidence: int) -> int:
