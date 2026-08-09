@@ -49,7 +49,7 @@ WHAT EACH PROFILE CONTROLS
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict
 
@@ -90,8 +90,24 @@ class CalibrationProfile:
     # Volume threshold (ConfirmationIndicators volume_spike)
     volume_spike_multiplier: float
 
+    # Data-driven latest-ICT confluence bonus (see matrix backtest,
+    # scripts/backtest_matrix.py + scripts/evaluate_confluence_lift.py). Maps a
+    # confluence-engine name (exactly as emitted by
+    # app/smc/latest_ict_confluence.py) to the confidence points it ADDS when
+    # its directional signal agrees with the trade direction. Only engines whose
+    # edge was proven ON THIS ASSET CLASS get a non-zero weight; every other
+    # engine (and every asset with an empty map) contributes nothing, so live
+    # behavior there is byte-for-byte unchanged. The total bonus across all
+    # aligned engines is capped at confluence_bonus_cap.
+    confluence_weights: Dict[str, float] = field(default_factory=dict)
+    confluence_bonus_cap: float = 8.0
 
-def _profile(asset_type: str, weights_filename: str) -> CalibrationProfile:
+
+def _profile(
+    asset_type: str,
+    weights_filename: str,
+    confluence_weights: Dict[str, float] | None = None,
+) -> CalibrationProfile:
     """
     Every numeric value here is this project's EXISTING, already-tuned
     default (previously hardcoded as global constants in
@@ -117,11 +133,51 @@ def _profile(asset_type: str, weights_filename: str) -> CalibrationProfile:
         volatility_high_ratio=1.5,
         volatility_low_ratio=0.7,
         volume_spike_multiplier=1.5,
+        confluence_weights=dict(confluence_weights or {}),
     )
 
 
-CRYPTO_PROFILE = _profile(ASSET_TYPE_CRYPTO, "ai_scorer_weights_crypto.json")
-GOLD_PROFILE = _profile(ASSET_TYPE_GOLD, "ai_scorer_weights_gold.json")
+# Data-driven per-asset confluence weights.
+#
+# Sized from the CONFLUENCE-LIFT test (scripts/evaluate_confluence_lift.py, 1h,
+# BTC/ETH/SOL and XAUUSDT), which measures each engine's forward-return edge
+# *when it agrees with the core Group A read* (market-structure bias) - i.e. the
+# exact condition under which this bonus fires live (engine bias == trade
+# direction). This is the right basis: an engine that looks flat ALONE (in the
+# matrix --mode new test) can still be a strong confirmation in context.
+#
+# Findings (in-context / +structure expectancy, larger = better):
+#   Crypto: IPDA Range +0.50 was the biggest; Turtle Soup +0.35; Judas Swing
+#     (NY) already had standalone edge and improved further; Rejection Block,
+#     Mitigation Block and Power of 3 all FLIPPED from ~0/negative standalone to
+#     clearly positive in context. Judas Swing (London) stayed negative and
+#     Liquidity Void had too few samples -> both excluded.
+#   Gold: Power of 3 dominated (+0.24); IPDA Range, Rejection Block and
+#     Mitigation Block were positive in context; Judas Swing and Turtle Soup do
+#     NOT work on gold (negative) -> excluded. (Note this is the mirror image of
+#     crypto, which is exactly why the maps are per-asset.)
+#
+# Weights are edge-proportional and intentionally easy to retune here as more
+# data arrives. Engine names must match app/smc/latest_ict_confluence.py exactly.
+_CRYPTO_CONFLUENCE_WEIGHTS = {
+    "IPDA Range": 5.0,
+    "Judas Swing (new_york)": 3.0,
+    "Turtle Soup": 3.0,
+    "Mitigation Block": 2.0,
+    "Rejection Block": 2.0,
+    "Power of 3": 2.0,
+}
+_GOLD_CONFLUENCE_WEIGHTS = {
+    "Power of 3": 5.0,
+    "IPDA Range": 2.0,
+    "Rejection Block": 2.0,
+    "Mitigation Block": 1.0,
+}
+
+CRYPTO_PROFILE = _profile(ASSET_TYPE_CRYPTO, "ai_scorer_weights_crypto.json",
+                          _CRYPTO_CONFLUENCE_WEIGHTS)
+GOLD_PROFILE = _profile(ASSET_TYPE_GOLD, "ai_scorer_weights_gold.json",
+                        _GOLD_CONFLUENCE_WEIGHTS)
 SILVER_PROFILE = _profile(ASSET_TYPE_SILVER, "ai_scorer_weights_silver.json")
 OIL_PROFILE = _profile(ASSET_TYPE_OIL, "ai_scorer_weights_oil.json")
 # No forex symbols exist yet (see app.core.constants.SYMBOL_TO_ASSET_TYPE) -
