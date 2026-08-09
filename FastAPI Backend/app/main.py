@@ -268,12 +268,27 @@ async def on_startup():
 
     await signal_ws_manager.start_listener()
 
+    # Opt-in, testnet-only hands-off execution. Off by default; the executor
+    # itself also refuses anything but testnet credentials (see its docstring).
+    if get_settings().auto_execute_testnet:
+        from app.scheduler.auto_executor import AutoExecutor
+
+        app.state.auto_executor = AutoExecutor()
+        await app.state.auto_executor.start()
+        logger.warning(
+            "AUTO_EXECUTE_TESTNET is ON - signals will be auto-executed on "
+            "Binance TESTNET (never mainnet)."
+        )
+
     logger.info("Scanner, signal monitor, and WebSocket listener started.")
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
     logger.info("Shutting down...")
+
+    if hasattr(app.state, "auto_executor"):
+        await app.state.auto_executor.stop()
 
     if hasattr(app.state, "scanner_task"):
         task = app.state.scanner_task

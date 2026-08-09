@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password_hash: str = Field(default="", alias="ADMIN_PASSWORD_HASH")
 
+    # Opt-in, testnet-only hands-off execution (app/scheduler/auto_executor.py).
+    # Defaults OFF; even when true the executor refuses unless saved credentials
+    # are testnet, so it can never place a mainnet order.
+    auto_execute_testnet: bool = Field(default=False, alias="AUTO_EXECUTE_TESTNET")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
