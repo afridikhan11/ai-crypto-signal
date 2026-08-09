@@ -1,0 +1,50 @@
+{
+  "params": {
+    "symbols": "BTCUSDT",
+    "days": 90,
+    "timeframe": "15m",
+    "min_confidence": 45,
+    "out": "data/probe.json"
+  },
+  "per_symbol": {
+    "BTCUSDT": {
+      "total_signals": 2662,
+      "wins": 35,
+      "losses": 67,
+      "unresolved": 11,
+      "expired": 2549,
+      "win_rate": 34.31,
+      "fill_rate": 4.24,
+      "avg_realized_rr": 0.78,
+      "by_confidence_bucket": {
+        "60-64": {
+          "total": 1211,
+          "wins": 17
+        },
+        "65-69": {
+          "total": 1321,
+          "wins": 13
+        },
+        "55-59": {
+          "total": 107,
+          "wins": 4
+        },
+        "50-54": {
+          "total": 17,
+          "wins": 1
+        },
+        "70-74": {
+          "total": 6,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "combined": {
+    "total_signals": 2662,
+    "wins": 35,
+    "losses": 67,
+    "win_rate": 34.31,
+    "avg_realized_rr": 0.78
+  }
+}
