@@ -266,6 +266,8 @@ class SignalGenerator:
         liquidation_pressure: Optional[Dict[str, float]] = None,
         fundamentals: Optional[Dict[str, Any]] = None,
         htf_dataframes: Optional[Dict[str, pd.DataFrame]] = None,
+        reference_df: Optional[pd.DataFrame] = None,
+        reference_symbol: str = "REFERENCE",
     ) -> Tuple[TradeDecision, Optional[Dict[str, Any]]]:
         """
         The primary entry point for live scanning: runs the pipeline ONCE
@@ -294,6 +296,8 @@ class SignalGenerator:
             htf_trend_1d="neutral",
             entry_trend_5m="neutral",
             htf_dataframes=htf_dataframes,
+            reference_df=reference_df,
+            reference_symbol=reference_symbol,
         )
 
     def generate_decision(
@@ -390,6 +394,8 @@ class SignalGenerator:
         htf_trend_1d: str,
         entry_trend_5m: str,
         htf_dataframes: Optional[Dict[str, pd.DataFrame]],
+        reference_df: Optional[pd.DataFrame] = None,
+        reference_symbol: str = "REFERENCE",
     ) -> Tuple[TradeDecision, Optional[Dict[str, Any]]]:
         if len(df) < 50:
             return self._abort(
@@ -649,6 +655,8 @@ class SignalGenerator:
         try:
             _confluence = self.latest_ict_confluence.analyze(
                 df, direction=_dir, fvgs=relevant_fvgs, order_blocks=[ob] if ob else None,
+                reference_df=reference_df, symbol=self.symbol,
+                reference_symbol=reference_symbol,
             )
             confluence_notes = (
                 [f"[Latest-ICT] {s.name}: {s.detail}" for s in _confluence.signals]

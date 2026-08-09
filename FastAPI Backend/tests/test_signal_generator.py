@@ -244,6 +244,22 @@ class TestDecisionIntegration:
             assert decision is not None
             assert decision.decision.value in ("LONG", "SHORT", "NO_TRADE")
 
+    def test_evaluate_accepts_smt_reference_frame(self):
+        """The SMT wiring: evaluate() takes an optional correlated reference
+        frame and must run end-to-end without raising, whether or not a
+        divergence is found. Omitting it (every existing caller) is unchanged."""
+        gen = SignalGenerator("BTCUSDT")
+        primary = _synthetic_df(n=300, seed=2, trend=0.15 * 300)
+        reference = _synthetic_df(n=300, seed=9, trend=-0.15 * 300)
+        decision, _ = gen.evaluate(
+            primary, reference_df=reference, reference_symbol="ETHUSDT"
+        )
+        assert decision is not None
+        assert decision.decision.value in ("LONG", "SHORT", "NO_TRADE")
+        # And with no reference frame it still works (backward compatible).
+        d2, _ = gen.evaluate(primary)
+        assert d2 is not None
+
     def test_rejections_carry_a_blocking_gate(self):
         """Every NO_TRADE must say WHY - no silent rejections."""
         gen = SignalGenerator("BTCUSDT")

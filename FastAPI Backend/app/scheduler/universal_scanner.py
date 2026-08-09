@@ -98,6 +98,7 @@ from app.services.fundamentals_service import FundamentalsService
 from app.services.macro_fundamentals_service import MacroFundamentalsService
 from app.services.trading_settings import get_engine_run_state, is_ict_pending_entry
 from app.strategy.signal_generator import SignalGenerator
+from app.smc.smt_divergence import default_reference_symbol
 
 # Primary structure timeframe. SMC/ICT concepts (BOS/CHoCH, order blocks,
 # FVG, liquidity sweeps) are institutional footprint that shows up on 15m+
@@ -408,6 +409,23 @@ class UniversalScanner:
             htf_dataframes = await self._load_htf_dataframes(symbol)
             fundamentals = await self._load_fundamentals(symbol)
 
+            # Correlated reference frame for SMT (Smart Money Technique)
+            # divergence. Only available when the partner symbol is one this
+            # scanner is already streaming; otherwise SMT simply doesn't run
+            # (advisory, like any other engine that finds nothing). Never lets
+            # a reference-data hiccup break the primary scan.
+            reference_symbol = default_reference_symbol(symbol)
+            reference_df = None
+            if reference_symbol != symbol and reference_symbol in self.symbols:
+                try:
+                    _ref = self.data_manager.get_dataframe(
+                        reference_symbol, PRIMARY_TIMEFRAME, limit=PRIMARY_CANDLES
+                    )
+                    if _ref is not None and not _ref.empty:
+                        reference_df = _ref
+                except Exception as _e:  # noqa: BLE001 - SMT is advisory
+                    logger.debug(f"[{symbol}] SMT reference {reference_symbol} unavailable: {_e}")
+
             # ONE pipeline, ONE AI, for every asset - and ONE pass over the
             # data. `evaluate()` returns both the fully-explained decision
             # and the signal dict from a single run, so a NO_TRADE is logged
@@ -421,6 +439,8 @@ class UniversalScanner:
                 liquidation_pressure=liquidation_pressure,
                 fundamentals=fundamentals,
                 htf_dataframes=htf_dataframes or None,
+                reference_df=reference_df,
+                reference_symbol=reference_symbol,
             )
             # Diagnostics-only observation of the decision `evaluate()`
             # already computed and returned above - see
