@@ -57,10 +57,19 @@ def execution_allowed(creds: dict | None, auto_trading_enabled: bool) -> bool:
 
 
 class AutoExecutor:
-    def __init__(self, interval_seconds: int = 20):
+    def __init__(self, interval_seconds: int = 20, retry_cooldown_seconds: int = 300):
         self._interval = interval_seconds
+        self._retry_cooldown = retry_cooldown_seconds
         self._task: asyncio.Task | None = None
         self._stopped = False
+        # A signal that hit a hard, non-retryable Binance error (e.g. a
+        # duplicate client order id - the order already exists) must NEVER be
+        # hammered every cycle. Skip it permanently (until restart).
+        self._failed_ids: set[str] = set()
+        # Everything else (notably risk-rejections, whose verdict can change as
+        # positions open/close) is retried, but at most once per cooldown, so a
+        # persistently-pending signal doesn't re-run risk + re-log every 20s.
+        self._next_attempt: dict[str, float] = {}
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
@@ -107,7 +116,14 @@ class AutoExecutor:
                 )
             )
             signals = (await session.execute(stmt)).scalars().unique().all()
+            now = asyncio.get_event_loop().time()
             for signal in signals:
+                sid = str(signal.id)
+                if sid in self._failed_ids:
+                    continue                       # hard-failed once, never retry
+                if now < self._next_attempt.get(sid, 0.0):
+                    continue                       # still in cooldown
+                self._next_attempt[sid] = now + self._retry_cooldown
                 try:
                     await self._execute_one(session, signal)
                 except Exception as e:  # noqa: BLE001 - isolate per-signal failures
@@ -159,7 +175,13 @@ class AutoExecutor:
                 signal.filled_at = datetime.now(timezone.utc)
                 signal.actual_fill_price = execution.entry_order.avg_fill_price
         except BinanceTradingError as exc:
-            logger.warning(f"AutoExecutor: {symbol} order rejected by Binance: {exc}")
+            # A Binance-side rejection is not going to fix itself on the next
+            # cycle (a duplicate client order id means the order already
+            # exists), so retire this signal instead of hammering the exchange.
+            self._failed_ids.add(str(signal.id))
+            logger.warning(
+                f"AutoExecutor: {symbol} order rejected by Binance (won't retry): {exc}"
+            )
             return
         finally:
             await trading_service.close()
