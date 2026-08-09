@@ -147,9 +147,15 @@ class BacktestEngine:
     # up and marking a trade UNRESOLVED (roughly 5 days on a 15m chart).
     MAX_RESOLUTION_CANDLES = 500
 
-    def __init__(self, symbol: str, timeframe: str = "15m"):
+    def __init__(self, symbol: str, timeframe: str = "15m",
+                 pending_expiry_candles: int = PENDING_ENTRY_EXPIRY_CANDLES):
         self.symbol = symbol.upper()
         self.timeframe = timeframe
+        # How many candles a pending limit entry has to fill before it EXPIRES.
+        # Defaults to the live constant (PENDING_ENTRY_EXPIRY_CANDLES) so a
+        # normal backtest mirrors live exactly; a sweep can override it to
+        # measure the fill-rate vs win-rate trade-off before any live change.
+        self.pending_expiry_candles = pending_expiry_candles
 
     async def _load_all_series(
         self, days: int
@@ -228,7 +234,7 @@ class BacktestEngine:
             zone_top = zone_bottom = entry
 
         is_long = signal_data["direction"] == "LONG"
-        end_index = min(len(df), start_index + PENDING_ENTRY_EXPIRY_CANDLES)
+        end_index = min(len(df), start_index + self.pending_expiry_candles)
         for j in range(start_index, end_index):
             high = float(df["high"].iloc[j])
             low = float(df["low"].iloc[j])

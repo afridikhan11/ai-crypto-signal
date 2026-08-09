@@ -32,7 +32,15 @@ ASSET_CLASS_COMMODITY = "commodity"
 # and by the backtest fill simulation (app/backtest/engine.py), so live and
 # backtested expiry can never disagree - the same "one rule, two callers"
 # discipline used for TP/SL resolution.
-PENDING_ENTRY_EXPIRY_CANDLES = 12
+# 48 (12h on a 15m chart), set from the fill-window sweep
+# (scripts/sweep_fill_window.py, BTC/ETH/SOL, 15m, 180d): widening the window
+# 12 -> 48 raised the fill rate (~3.9% -> ~5.4%) and average realised R:R
+# (0.37 -> 0.43) with no drop in win rate, i.e. more setups actually fill and
+# the ones that do have a better reward/risk - a Pareto improvement. (96 gave
+# an even better R:R but means a 24h-stale pending entry; 48 is the balanced
+# point.) NOTE: this improves fill/RR, it does not by itself make the pipeline
+# profitable - signal quality / confidence is the larger, separate issue.
+PENDING_ENTRY_EXPIRY_CANDLES = 48
 PENDING_ENTRY_EXPIRY_MINUTES = PENDING_ENTRY_EXPIRY_CANDLES * 15
 
 
