@@ -49,10 +49,18 @@ SCOPE (deliberately minimal for the first version)
 ENVIRONMENTS
 --------------------------------------------------------------------------
 Same testnet/mainnet switch as BinanceAccountService - `testnet=True`
-points every request at Binance's Demo Trading futures endpoint
-(demo-fapi.binance.com) instead of mainnet (fapi.binance.com). Whichever
+points every request at the Binance Futures TESTNET
+(testnet.binancefuture.com, a full API mirror where every order type -
+including STOP_MARKET/TAKE_PROFIT - works) instead of mainnet
+(fapi.binance.com). Overridable via BINANCE_FUTURES_TESTNET_URL. Whichever
 environment is selected in Settings (saved alongside the API key) is what
 every execution uses - there is no separate trading-only toggle.
+
+NOTE: the previous default, demo-fapi.binance.com ("Demo/Mock Trading"),
+rejects conditional orders on /fapi/v1/order with code -4120 ("use the Algo
+Order API"), so stop-losses were never placed there. Testnet keys for the
+real testnet come from https://testnet.binancefuture.com (separate from
+demo keys).
 """
 
 from __future__ import annotations
@@ -61,6 +69,7 @@ import asyncio
 import hashlib
 import hmac
 import math
+import os
 import time
 from typing import Optional
 from urllib.parse import urlencode
@@ -116,7 +125,16 @@ class StopReplacementResult(BaseModel):
 
 class BinanceTradingService:
     FUTURES_MAINNET_URL = "https://fapi.binance.com"
-    FUTURES_TESTNET_URL = "https://demo-fapi.binance.com"
+    # The REAL Binance Futures Testnet - a full mirror of the mainnet API, so
+    # every order type works (STOP_MARKET / TAKE_PROFIT included). The older
+    # default, demo-fapi.binance.com ("Demo/Mock Trading"), does NOT support
+    # conditional orders on /fapi/v1/order (returns code -4120 "use the Algo
+    # Order API"), which left stop-losses unplaced. Get testnet keys from
+    # https://testnet.binancefuture.com. Overridable via BINANCE_FUTURES_TESTNET_URL
+    # for anyone who still wants the demo endpoint.
+    FUTURES_TESTNET_URL = os.getenv(
+        "BINANCE_FUTURES_TESTNET_URL", "https://testnet.binancefuture.com"
+    )
 
     RECV_WINDOW = 5000
     HTTP_TIMEOUT = 15.0
