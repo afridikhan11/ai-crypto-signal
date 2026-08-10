@@ -547,20 +547,28 @@ class SignalMonitor:
         finally:
             await trading_service.close()
 
-    async def _force_close_on_stop(self, signal: Signal, symbol: str, price: float) -> None:
-        """Software stop-loss: when price hits the stop, close the live position
-        with a reduceOnly MARKET order.
+    async def _force_close_resolved_position(
+        self, signal: Signal, symbol: str, price: float, status_label: str
+    ) -> None:
+        """Once a signal resolves (TP_HIT or STOPPED), close ANY remaining live
+        position with a reduceOnly MARKET order and cancel every resting order.
 
-        Normally the exchange's own STOP_MARKET order closes the position and
-        this DB status update just records it. But some venues reject
-        STOP_MARKET (Binance's Demo endpoint returns -4120 "use the Algo Order
-        API"), so the stop never rests and the position would run on unprotected.
-        Closing here makes the DB 'STOPPED' match reality on those venues, and is
-        a harmless no-op everywhere else: `_get_live_position_quantity` returns
-        nothing when the exchange stop already flattened the position, and the
-        order is reduceOnly so it can only ever reduce, never open, exposure.
-        Best-effort - a failure is logged, never raised, and never blocks
-        outcome resolution.
+        Two venue realities make this necessary rather than trusting the resting
+        exchange orders alone:
+          - STOP_MARKET is rejected on some venues (Binance Demo returns -4120),
+            so a hit stop never actually closes the position.
+          - A reduceOnly LIMIT take-profit can PARTIALLY fill in thin books
+            (observed on Demo: a 4599 position with only 321 filled at the TP),
+            leaving a large residual open after the monitor has already marked
+            the signal TP_HIT and stopped managing it.
+
+        Closing the residual here makes the DB status match reality. It is a
+        harmless no-op where the exchange order already flattened the position
+        (`_get_live_position_quantity` returns nothing), and reduceOnly can only
+        reduce, never open, exposure. Best-effort - a failure is logged, never
+        raised, and never blocks outcome resolution. All resting orders (the
+        stop AND the take-profit LIMIT) are then cancelled so nothing stray
+        remains against a now-flat position.
         """
         if not signal.executed:
             return
@@ -569,25 +577,27 @@ class SignalMonitor:
             return
         try:
             quantity = await self._get_live_position_quantity(symbol)
-            if not quantity:
-                return  # already flat (exchange stop fired, or never actually filled)
-            direction_sign = 1 if signal.direction == Direction.LONG else -1
-            await trading_service.close_position(symbol, direction_sign * quantity)
-            logger.success(
-                f"{symbol}: software stop-loss - position MARKET-closed at {price} "
-                f"(signal {signal.id}, env={trading_service.environment})."
-            )
+            if quantity:
+                direction_sign = 1 if signal.direction == Direction.LONG else -1
+                await trading_service.close_position(symbol, direction_sign * quantity)
+                logger.success(
+                    f"{symbol}: {status_label} - residual position ({quantity}) "
+                    f"MARKET-closed at {price} (signal {signal.id}, "
+                    f"env={trading_service.environment})."
+                )
+            # Cancel every resting order (stop + take-profit LIMIT) - harmless if
+            # Binance already auto-cancelled them against a flat position.
             try:
-                for order in await trading_service.get_open_stop_orders(symbol):
+                for order in await trading_service.get_all_open_orders(symbol):
                     oid = order.get("orderId")
                     if oid is not None:
                         await trading_service.cancel_order(symbol, oid)
             except BinanceTradingError as exc:
-                logger.warning(f"{symbol}: could not clean up stray orders after software stop: {exc}")
+                logger.warning(f"{symbol}: could not clean up resting orders after {status_label}: {exc}")
         except BinanceTradingError as exc:
             logger.warning(
-                f"{symbol}: software stop-loss close FAILED for signal {signal.id}: {exc}. "
-                f"DB marks STOPPED but the real position may still be open - check it."
+                f"{symbol}: force-close on {status_label} FAILED for signal {signal.id}: {exc}. "
+                f"DB marks {status_label} but the real position may still be open - check it."
             )
         finally:
             await trading_service.close()
@@ -938,16 +948,22 @@ class SignalMonitor:
                         f"{symbol}: Signal closed | {new_status.value} | "
                         f"Close price={price} | Confidence={signal.confidence}"
                     )
-                    # Software stop-loss: if the stop was hit, make sure the
-                    # live position is actually closed - the exchange STOP order
-                    # may never have rested (e.g. Binance Demo rejects
-                    # STOP_MARKET). A take-profit closes itself via its resting
-                    # LIMIT order, so only STOPPED needs this backstop.
-                    if new_status is SignalStatus.STOPPED:
+                    # Force-close backstop for BOTH terminal outcomes:
+                    #  - STOPPED: the exchange STOP order may never have rested
+                    #    (e.g. Binance Demo rejects STOP_MARKET), so nothing
+                    #    closed the position.
+                    #  - TP_HIT: the resting reduceOnly LIMIT take-profit can
+                    #    PARTIALLY fill (e.g. 321 of 4599 NEAR), leaving a
+                    #    residual position open even though price reached the TP.
+                    # Either way, flatten any residual quantity and cancel every
+                    # leftover order so the trade is truly closed.
+                    if new_status in (SignalStatus.STOPPED, SignalStatus.TP_HIT):
                         try:
-                            await self._force_close_on_stop(signal, symbol, price)
+                            await self._force_close_resolved_position(
+                                signal, symbol, price, new_status.value
+                            )
                         except Exception as e:  # noqa: BLE001 - never break resolution
-                            logger.warning(f"{symbol}: software stop-loss backstop errored: {e}")
+                            logger.warning(f"{symbol}: force-close backstop errored: {e}")
                     continue
 
                 if not management_enabled:
