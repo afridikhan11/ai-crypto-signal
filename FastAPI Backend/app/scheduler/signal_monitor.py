@@ -547,6 +547,51 @@ class SignalMonitor:
         finally:
             await trading_service.close()
 
+    async def _force_close_on_stop(self, signal: Signal, symbol: str, price: float) -> None:
+        """Software stop-loss: when price hits the stop, close the live position
+        with a reduceOnly MARKET order.
+
+        Normally the exchange's own STOP_MARKET order closes the position and
+        this DB status update just records it. But some venues reject
+        STOP_MARKET (Binance's Demo endpoint returns -4120 "use the Algo Order
+        API"), so the stop never rests and the position would run on unprotected.
+        Closing here makes the DB 'STOPPED' match reality on those venues, and is
+        a harmless no-op everywhere else: `_get_live_position_quantity` returns
+        nothing when the exchange stop already flattened the position, and the
+        order is reduceOnly so it can only ever reduce, never open, exposure.
+        Best-effort - a failure is logged, never raised, and never blocks
+        outcome resolution.
+        """
+        if not signal.executed:
+            return
+        trading_service = self._build_trading_service_for(signal)
+        if trading_service is None:
+            return
+        try:
+            quantity = await self._get_live_position_quantity(symbol)
+            if not quantity:
+                return  # already flat (exchange stop fired, or never actually filled)
+            direction_sign = 1 if signal.direction == Direction.LONG else -1
+            await trading_service.close_position(symbol, direction_sign * quantity)
+            logger.success(
+                f"{symbol}: software stop-loss - position MARKET-closed at {price} "
+                f"(signal {signal.id}, env={trading_service.environment})."
+            )
+            try:
+                for order in await trading_service.get_open_stop_orders(symbol):
+                    oid = order.get("orderId")
+                    if oid is not None:
+                        await trading_service.cancel_order(symbol, oid)
+            except BinanceTradingError as exc:
+                logger.warning(f"{symbol}: could not clean up stray orders after software stop: {exc}")
+        except BinanceTradingError as exc:
+            logger.warning(
+                f"{symbol}: software stop-loss close FAILED for signal {signal.id}: {exc}. "
+                f"DB marks STOPPED but the real position may still be open - check it."
+            )
+        finally:
+            await trading_service.close()
+
     async def _apply_management(
         self, signal: Signal, symbol: str, price: float, actions: List[ManagementAction],
     ) -> List[Dict]:
@@ -893,6 +938,16 @@ class SignalMonitor:
                         f"{symbol}: Signal closed | {new_status.value} | "
                         f"Close price={price} | Confidence={signal.confidence}"
                     )
+                    # Software stop-loss: if the stop was hit, make sure the
+                    # live position is actually closed - the exchange STOP order
+                    # may never have rested (e.g. Binance Demo rejects
+                    # STOP_MARKET). A take-profit closes itself via its resting
+                    # LIMIT order, so only STOPPED needs this backstop.
+                    if new_status is SignalStatus.STOPPED:
+                        try:
+                            await self._force_close_on_stop(signal, symbol, price)
+                        except Exception as e:  # noqa: BLE001 - never break resolution
+                            logger.warning(f"{symbol}: software stop-loss backstop errored: {e}")
                     continue
 
                 if not management_enabled:
