@@ -560,3 +560,56 @@ class TestEngineRunStateGateOnMonitorPoll:
         assert monitor.is_running is False
         monitor._running = True
         assert monitor.is_running is True
+
+
+class TestReconcileVanishedPosition:
+    """An executed ACTIVE signal whose live position is gone from the
+    exchange must be reconciled - but only after sustained, consecutive
+    confirmation, never on a single (possibly stale) blank snapshot."""
+
+    def test_present_position_never_reconciles_and_resets_counter(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        s = _FakeSignal(executed=True)
+        # Even with a prior partial absent-streak, a present position clears it.
+        monitor._position_absent_polls[str(s.id)] = 3
+        assert monitor._reconcile_vanished_position(s, "AVAXUSDT", {"AVAXUSDT"}) is None
+        assert str(s.id) not in monitor._position_absent_polls
+
+    def test_single_absence_does_not_reconcile(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        s = _FakeSignal(executed=True)
+        assert monitor._reconcile_vanished_position(s, "AVAXUSDT", set()) is None
+        assert monitor._position_absent_polls[str(s.id)] == 1
+
+    def test_reconciles_to_cancelled_only_after_threshold_consecutive_polls(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        s = _FakeSignal(executed=True)
+        threshold = SignalMonitor.POSITION_VANISHED_RECONCILE_POLLS
+        # All polls but the last stay ACTIVE (return None).
+        for _ in range(threshold - 1):
+            assert monitor._reconcile_vanished_position(s, "AVAXUSDT", set()) is None
+        # The threshold poll flips it to CANCELLED and clears the counter.
+        assert (
+            monitor._reconcile_vanished_position(s, "AVAXUSDT", set())
+            is SignalStatus.CANCELLED
+        )
+        assert str(s.id) not in monitor._position_absent_polls
+
+    def test_absence_streak_must_be_consecutive(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        s = _FakeSignal(executed=True)
+        # Two absences, then the position reappears - the streak resets.
+        monitor._reconcile_vanished_position(s, "AVAXUSDT", set())
+        monitor._reconcile_vanished_position(s, "AVAXUSDT", set())
+        monitor._reconcile_vanished_position(s, "AVAXUSDT", {"AVAXUSDT"})
+        # A fresh single absence is only count 1 again, not resumed at 3.
+        assert monitor._reconcile_vanished_position(s, "AVAXUSDT", set()) is None
+        assert monitor._position_absent_polls[str(s.id)] == 1
+
+    def test_symbol_match_is_case_insensitive(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        s = _FakeSignal(executed=True)
+        # open_position_symbols are upper-cased by the caller; the helper
+        # upper-cases the signal symbol too so a lowercase symbol still matches.
+        assert monitor._reconcile_vanished_position(s, "avaxusdt", {"AVAXUSDT"}) is None
+        assert str(s.id) not in monitor._position_absent_polls
