@@ -142,12 +142,21 @@ MANAGEMENT_CANDLES = 500
 class SignalMonitor:
     POLL_INTERVAL_SECONDS = 30.0
 
+    # An executed ACTIVE signal whose live position is absent from the
+    # exchange is only reconciled (closed) after this many CONSECUTIVE polls
+    # confirm the absence - never on a single blank, which could be a
+    # transient/stale account snapshot. ~5 polls * 30s ~= 2.5 min.
+    POSITION_VANISHED_RECONCILE_POLLS = 5
+
     def __init__(self, data_manager: BinanceDataManager):
         self.data_manager = data_manager
         self._running = False
         # Stateless engines - built once, reused across every poll.
         self.trade_manager = TradeManagementEngine()
         self.session_engine = SessionEngine()
+        # signal id -> number of consecutive polls its live position has been
+        # missing from the exchange. Drives vanished-position reconciliation.
+        self._position_absent_polls: Dict[str, int] = {}
 
     def _resolve_status(self, signal: Signal, price: float) -> Optional[SignalStatus]:
         """
@@ -165,6 +174,40 @@ class SignalMonitor:
             if price >= signal.stop_loss:
                 return SignalStatus.STOPPED
         return None
+
+    def _reconcile_vanished_position(
+        self, signal: Signal, symbol: str, open_position_symbols: set
+    ) -> Optional[SignalStatus]:
+        """Decide whether an executed ACTIVE signal whose live position is
+        absent from the exchange should be closed.
+
+        An executed ACTIVE signal is supposed to have a live position. When
+        the exchange shows none, the position closed for a reason the
+        close-price TP/SL resolver did not catch: the venue reset the account
+        (common on Binance Demo), the exit filled on a wick between two 1m
+        closes, or it was closed manually. Left alone, that signal can never
+        resolve by TP/SL - it stays ACTIVE forever, a false open trade that
+        also re-spams the stop-sync warning every poll.
+
+        The absence is only acted on after POSITION_VANISHED_RECONCILE_POLLS
+        CONSECUTIVE confirmations, so one transient or stale snapshot can never
+        close a real trade. On the threshold it returns CANCELLED - the trade
+        WAS open and closed for a reason other than our recorded TP/SL, which
+        is exactly what CANCELLED means (and, unlike STOPPED/TP_HIT, does not
+        fabricate a win or a loss for an outcome we cannot actually determine).
+        Returns None while the position is present or the count is still below
+        the threshold.
+        """
+        sid = str(signal.id)
+        if symbol.upper() in open_position_symbols:
+            self._position_absent_polls.pop(sid, None)
+            return None
+        count = self._position_absent_polls.get(sid, 0) + 1
+        if count < self.POSITION_VANISHED_RECONCILE_POLLS:
+            self._position_absent_polls[sid] = count
+            return None
+        self._position_absent_polls.pop(sid, None)
+        return SignalStatus.CANCELLED
 
     # ------------------------------------------------------------------
     # ICT Pending Limit Entry (2026-07-30) - the pending state machine.
@@ -919,6 +962,32 @@ class SignalMonitor:
             if not active_signals:
                 return
 
+            # Reconciliation snapshot: reuse the SAME cached futures account
+            # the equity snapshot above just populated (30s TTL) so this costs
+            # ZERO extra Binance calls. `open_position_symbols` is the set of
+            # symbols with a live, non-zero position right now. It stays None
+            # when the snapshot is unavailable this poll (no creds / never
+            # fetched) - reconciliation is then skipped entirely, because a
+            # blank snapshot must never be read as "the position closed". The
+            # cache already falls back to the last-good snapshot on a transient
+            # fetch error, so a single API glitch does not blank this.
+            open_position_symbols: Optional[set] = None
+            try:
+                from app.services.signal_service import _get_futures_account
+                futures = await _get_futures_account()
+                if futures is not None:
+                    open_position_symbols = {
+                        p.symbol.upper()
+                        for p in futures.open_positions
+                        if p.position_amt != 0
+                    }
+            except Exception as e:  # noqa: BLE001 - never break the poll
+                logger.warning(f"Reconciliation snapshot unavailable this poll: {e}")
+            creds = binance_credentials.load_credentials()
+            current_environment = (
+                ("testnet" if creds.get("testnet") else "mainnet") if creds else None
+            )
+
             events: List[Dict] = []
             dirty = False
             for signal in active_signals:
@@ -965,6 +1034,48 @@ class SignalMonitor:
                         except Exception as e:  # noqa: BLE001 - never break resolution
                             logger.warning(f"{symbol}: force-close backstop errored: {e}")
                     continue
+
+                # Reconcile a VANISHED live position. Only for an executed
+                # signal whose ORIGINAL environment matches the currently saved
+                # credentials (mirrors _build_trading_service_for - never judge
+                # a mainnet-executed trade against a testnet snapshot, or vice
+                # versa). A non-executed advisory signal has no exchange
+                # position by definition and is deliberately left untouched.
+                if (
+                    open_position_symbols is not None
+                    and signal.executed
+                    and (
+                        not signal.executed_environment
+                        or signal.executed_environment == current_environment
+                    )
+                ):
+                    reconciled = self._reconcile_vanished_position(
+                        signal, symbol, open_position_symbols
+                    )
+                    if reconciled is not None:
+                        signal.status = reconciled
+                        signal.closed_at = datetime.now(timezone.utc)
+                        dirty = True
+                        events.append({
+                            "event": "signal_closed",
+                            "symbol": symbol,
+                            "status": reconciled.value,
+                            "price": price,
+                            "reason": "live position no longer on exchange (reconciled)",
+                        })
+                        logger.warning(
+                            f"{symbol}: Signal RECONCILED to {reconciled.value} - its live "
+                            f"position was missing from the exchange for "
+                            f"{self.POSITION_VANISHED_RECONCILE_POLLS} consecutive polls "
+                            f"(signal {signal.id}). Cancelling any stray resting orders."
+                        )
+                        try:
+                            await self._force_close_resolved_position(
+                                signal, symbol, price, reconciled.value
+                            )
+                        except Exception as e:  # noqa: BLE001 - never break resolution
+                            logger.warning(f"{symbol}: reconcile cleanup errored: {e}")
+                        continue
 
                 if not management_enabled:
                     continue
