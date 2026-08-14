@@ -138,6 +138,14 @@ from app.strategy.trade_management_engine import (
 MANAGEMENT_TIMEFRAME = "15m"
 MANAGEMENT_CANDLES = 500
 
+# Binance error code for "order type not supported for this endpoint - use the
+# Algo Order API instead". It means the venue (notably Binance Demo/Mock
+# Trading) does not accept resting STOP_MARKET conditional orders at all. When
+# we see it, exchange stop-syncing is pointless for that whole environment, so
+# we stop attempting it and let the SOFTWARE stop (this monitor) enforce the
+# stop instead - rather than re-failing, and re-logging, every single poll.
+_UNSUPPORTED_ORDER_CODE = "-4120"
+
 
 class SignalMonitor:
     POLL_INTERVAL_SECONDS = 30.0
@@ -157,6 +165,11 @@ class SignalMonitor:
         # signal id -> number of consecutive polls its live position has been
         # missing from the exchange. Drives vanished-position reconciliation.
         self._position_absent_polls: Dict[str, int] = {}
+        # Environments ("testnet"/"mainnet") that rejected an exchange STOP
+        # order with -4120 (e.g. Binance Demo). Once an environment is in here,
+        # stop management for its executed signals is routed to the software
+        # stop instead of re-attempting (and re-spamming) the exchange sync.
+        self._exchange_stops_unsupported: set[str] = set()
 
     def _resolve_status(self, signal: Signal, price: float) -> Optional[SignalStatus]:
         """
@@ -485,6 +498,27 @@ class SignalMonitor:
             return None
         return abs(position.position_amt)
 
+    def _current_environment(self) -> Optional[str]:
+        """"testnet"/"mainnet" for the currently saved credentials, or None
+        when none are available. Matches BinanceTradingService.environment."""
+        creds = binance_credentials.load_credentials()
+        if not creds:
+            return None
+        return "testnet" if creds.get("testnet") else "mainnet"
+
+    def _note_exchange_stops_unsupported(self, environment: str, symbol: str) -> None:
+        """Remember (once, with one log line) that `environment` rejects
+        exchange STOP orders, so we stop re-attempting the sync every poll."""
+        if environment in self._exchange_stops_unsupported:
+            return
+        self._exchange_stops_unsupported.add(environment)
+        logger.warning(
+            f"{symbol}: environment '{environment}' rejects exchange STOP orders (code "
+            f"{_UNSUPPORTED_ORDER_CODE}) - routing stop management to the SOFTWARE stop for all "
+            f"executed signals here. Positions stay protected by this monitor; no exchange stop "
+            f"order rests. This is expected on Binance Demo and is logged once, not every poll."
+        )
+
     async def _sync_exchange_stop(self, signal: Signal, symbol: str, new_stop: float) -> bool:
         """
         Moves the REAL resting stop order to `new_stop` for an executed
@@ -507,6 +541,14 @@ class SignalMonitor:
             # what is actually resting (or unknown) on the exchange.
             return False
 
+        # Fast path: an environment already known to reject exchange STOP
+        # orders (Binance Demo, -4120) is not retried. Return False silently -
+        # _apply_management routes this to the software stop. No API call, no
+        # per-poll spam.
+        if trading_service.environment in self._exchange_stops_unsupported:
+            await trading_service.close()
+            return False
+
         try:
             quantity = await self._get_live_position_quantity(symbol)
             if quantity is None:
@@ -524,13 +566,19 @@ class SignalMonitor:
                 signal_id=str(signal.id),
             )
         except BinanceTradingError as exc:
-            logger.warning(f"{symbol}: Exchange Sync Failed - stop sync for signal {signal.id}: {exc}")
+            if _UNSUPPORTED_ORDER_CODE in str(exc):
+                self._note_exchange_stops_unsupported(trading_service.environment, symbol)
+            else:
+                logger.warning(f"{symbol}: Exchange Sync Failed - stop sync for signal {signal.id}: {exc}")
             return False
         finally:
             await trading_service.close()
 
         if not result.success:
-            logger.warning(f"{symbol}: Exchange Sync Failed - signal {signal.id}: {result.warning}")
+            if _UNSUPPORTED_ORDER_CODE in (result.warning or ""):
+                self._note_exchange_stops_unsupported(trading_service.environment, symbol)
+            else:
+                logger.warning(f"{symbol}: Exchange Sync Failed - signal {signal.id}: {result.warning}")
             return False
 
         logger.success(
@@ -718,17 +766,27 @@ class SignalMonitor:
             # at the previous, still-valid stop - never a partial/
             # inconsistent state.
             synced = await self._sync_exchange_stop(signal, symbol, new_stop)
-            if not synced:
-                logger.warning(
-                    f"{symbol}: stop improvement to {new_stop} ({best_action.action_type.value}) computed but "
-                    f"NOT applied - exchange sync did not succeed, database stop_loss remains {previous_stop}."
-                )
-            else:
+            software_stop = (
+                signal.executed
+                and not synced
+                and self._current_environment() in self._exchange_stops_unsupported
+            )
+            if synced or software_stop:
                 signal.stop_loss = new_stop
-                logger.success(
-                    f"{symbol}: Stop managed {previous_stop} -> {signal.stop_loss} "
-                    f"({best_action.action_type.value}) | {best_action.reason}"
-                )
+                if software_stop:
+                    # No exchange order rests here (e.g. Binance Demo, -4120),
+                    # so the software stop is the operative stop and reads
+                    # signal.stop_loss directly - advancing it means breakeven/
+                    # trailing genuinely protect the position, with no spam.
+                    logger.info(
+                        f"{symbol}: Stop managed {previous_stop} -> {signal.stop_loss} "
+                        f"({best_action.action_type.value}) via SOFTWARE stop | {best_action.reason}"
+                    )
+                else:
+                    logger.success(
+                        f"{symbol}: Stop managed {previous_stop} -> {signal.stop_loss} "
+                        f"({best_action.action_type.value}) | {best_action.reason}"
+                    )
                 events.append({
                     "event": "signal_stop_updated",
                     "symbol": symbol,
@@ -736,8 +794,16 @@ class SignalMonitor:
                     "stop_loss": signal.stop_loss,
                     "management_action": best_action.action_type.value,
                     "reason": best_action.reason,
-                    "exchange_synced": signal.executed,
+                    # True only for a REAL exchange stop replacement: a
+                    # non-executed (DB-only) signal or a software-stop advance
+                    # (unsupported env) both report False.
+                    "exchange_synced": bool(signal.executed and synced),
                 })
+            else:
+                logger.warning(
+                    f"{symbol}: stop improvement to {new_stop} ({best_action.action_type.value}) computed but "
+                    f"NOT applied - exchange sync did not succeed, database stop_loss remains {previous_stop}."
+                )
 
         for action in actions:
             if action.action_type is ManagementActionType.PARTIAL_CLOSE:
