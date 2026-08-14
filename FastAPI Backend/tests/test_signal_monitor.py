@@ -535,6 +535,95 @@ class TestSyncExchangeStopEndToEnd:
         assert result is False
 
 
+class TestExchangeStopsUnsupported:
+    """Binance Demo rejects resting STOP_MARKET orders with -4120. Once seen,
+    the monitor must stop re-attempting (and re-spamming) the exchange sync
+    every poll, and instead advance the DB stop so the SOFTWARE stop enforces
+    breakeven/trailing. Positions stay protected; the log stays clean."""
+
+    CREDS = {"api_key": "k", "api_secret": "s", "testnet": True}
+
+    def test_note_records_environment_once(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        monitor._note_exchange_stops_unsupported("testnet", "BTCUSDT")
+        monitor._note_exchange_stops_unsupported("testnet", "BTCUSDT")  # idempotent
+        assert monitor._exchange_stops_unsupported == {"testnet"}
+
+    def test_sync_fast_path_skips_exchange_when_env_already_unsupported(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        monitor._exchange_stops_unsupported.add("testnet")
+        signal = _FakeSignal(executed=True, executed_environment="testnet")
+
+        def boom(self):
+            raise AssertionError("must not fetch the account once the env is known unsupported")
+
+        with patch.object(binance_credentials, "load_credentials", return_value=self.CREDS), \
+             patch.object(BinanceAccountService, "get_futures_account", boom), \
+             patch.object(BinanceTradingService, "close", AsyncMock(return_value=None)):
+            result = _run(monitor._sync_exchange_stop(signal, "BTCUSDT", 100.0))
+
+        assert result is False  # routed to software stop by the caller
+
+    def test_minus_4120_marks_env_unsupported_and_returns_false(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        signal = _FakeSignal(executed=True, executed_environment="testnet")
+        account = _FakeFuturesAccount([_FakeFuturesPosition("BTCUSDT", 1.5)])
+
+        async def fake_replace(self, symbol, direction, quantity, new_stop_price, signal_id=None):
+            return _FakeStopReplacementResult(
+                success=False,
+                warning="POST /fapi/v1/order failed (400, code=-4120): Order type not supported",
+            )
+
+        with patch.object(binance_credentials, "load_credentials", return_value=self.CREDS), \
+             patch.object(BinanceAccountService, "get_futures_account", AsyncMock(return_value=account)), \
+             patch.object(BinanceAccountService, "close", AsyncMock(return_value=None)), \
+             patch.object(BinanceTradingService, "replace_stop_loss", fake_replace), \
+             patch.object(BinanceTradingService, "close", AsyncMock(return_value=None)):
+            result = _run(monitor._sync_exchange_stop(signal, "BTCUSDT", 100.0))
+
+        assert result is False
+        assert "testnet" in monitor._exchange_stops_unsupported
+
+    def test_apply_management_advances_db_stop_via_software_stop_when_unsupported(self):
+        monitor = SignalMonitor(_FakeDataManager())
+        monitor._exchange_stops_unsupported.add("testnet")
+        signal = _FakeSignal(executed=True, executed_environment="testnet")
+        actions = [ManagementAction(ManagementActionType.MOVE_TO_BREAKEVEN,
+                                    reason="1R reached", new_stop_loss=100.0)]
+
+        async def fake_sync(sig, symbol, new_stop):
+            return False  # exchange can't hold the stop here
+
+        monitor._sync_exchange_stop = fake_sync
+        with patch.object(binance_credentials, "load_credentials", return_value=self.CREDS):
+            events = _run(monitor._apply_management(signal, "BTCUSDT", 105.0, actions))
+
+        assert signal.stop_loss == 100.0            # software stop advanced it
+        assert len(events) == 1
+        assert events[0]["event"] == "signal_stop_updated"
+        assert events[0]["exchange_synced"] is False
+
+    def test_apply_management_still_gates_on_real_failure_in_supported_env(self):
+        """A genuine (non-4120) sync failure in a supported environment must
+        still leave the DB stop untouched - the software-stop path is ONLY for
+        environments known to reject exchange stops."""
+        monitor = SignalMonitor(_FakeDataManager())  # empty unsupported set
+        signal = _FakeSignal(executed=True, executed_environment="testnet")
+        actions = [ManagementAction(ManagementActionType.MOVE_TO_BREAKEVEN,
+                                    reason="1R reached", new_stop_loss=100.0)]
+
+        async def fake_sync(sig, symbol, new_stop):
+            return False
+
+        monitor._sync_exchange_stop = fake_sync
+        with patch.object(binance_credentials, "load_credentials", return_value=self.CREDS):
+            events = _run(monitor._apply_management(signal, "BTCUSDT", 105.0, actions))
+
+        assert signal.stop_loss == 95.0  # untouched
+        assert events == []
+
+
 class TestEngineRunStateGateOnMonitorPoll:
     """Auto Trading Control Panel (2026-07-30) - Pause/Stop must skip the
     ENTIRE poll before it ever opens a database session: real orders
