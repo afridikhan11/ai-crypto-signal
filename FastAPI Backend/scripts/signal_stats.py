@@ -19,6 +19,12 @@ actually taken cannot inflate or deflate the number.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
+
+# Allow running as `python scripts/signal_stats.py`: Python puts scripts/ on
+# sys.path, not the project root, so add the parent (the app package root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import func, select
 
