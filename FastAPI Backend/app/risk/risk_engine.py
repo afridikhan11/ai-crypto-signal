@@ -114,10 +114,17 @@ class RiskEngine:
         equity_peak: Optional[float] = None,
         correlation_warning: Optional[str] = None,
         context: Optional[RiskContext] = None,
+        max_notional: Optional[float] = None,
     ) -> RiskAssessment:
         """
         Preserved verbatim so `execution_risk.py`, `signal_service.py` and
         every existing test keep working unchanged.
+
+        `max_notional` (optional) caps the sized position's exposure so a
+        tight-stop trade is shrunk to fit a leverage ceiling instead of being
+        rejected. Must match the cap the caller applied to `context.candidate`
+        so the returned `position_size` and the leverage the engine assessed
+        describe the SAME position.
 
         Callers that can supply the richer `context` (real Binance margin,
         leverage, maintenance margin, correlation clusters) get the full
@@ -129,7 +136,8 @@ class RiskEngine:
             risk_percent if risk_percent is not None else self.limits.max_risk_percent_per_trade
         )
         size = calculate_position_size(
-            account_balance, entry_price, stop_loss, effective_risk_percent, take_profit
+            account_balance, entry_price, stop_loss, effective_risk_percent, take_profit,
+            max_notional=max_notional,
         )
 
         if context is None:

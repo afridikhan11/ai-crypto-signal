@@ -52,6 +52,42 @@ def _leverage_for(futures_account, symbol: str):
     return None
 
 
+# Stay just under the effective-leverage ceiling so float rounding at the
+# exact boundary can't flip an in-limit trade back to a rejection.
+_LEVERAGE_HEADROOM_SAFETY = 0.98
+
+
+def _leverage_headroom_notional(futures_account, risk_context) -> Optional[float]:
+    """Dollar notional a NEW position may add while keeping TOTAL effective
+    leverage under the ceiling that the `effective_leverage` metric enforces:
+
+        headroom = SAFETY * max_leverage * equity - existing_open_notional
+
+    Uses the SAME equity (margin_balance) and open-position notionals
+    (qty * mark price) the metric itself uses, so the cap and the metric can
+    never disagree. Returns None when there is no exchange snapshot - the
+    leverage metric is UNKNOWN then and does not block, so no cap is needed
+    (legacy behavior is preserved exactly).
+    """
+    if futures_account is None:
+        return None
+    equity = getattr(futures_account, "margin_balance", None) or getattr(
+        futures_account, "wallet_balance", None
+    )
+    if not equity:
+        equity = getattr(risk_context, "account_balance", None)
+    if not equity or equity <= 0:
+        return None
+    existing_notional = 0.0
+    for p in getattr(futures_account, "open_positions", ()) or ():
+        qty = abs(float(getattr(p, "position_amt", 0.0) or 0.0))
+        price = getattr(p, "mark_price", None) or getattr(p, "entry_price", None) or 0.0
+        existing_notional += qty * float(price)
+    max_lev = _risk_engine.limits.max_leverage_percent / 100.0
+    headroom = _LEVERAGE_HEADROOM_SAFETY * max_lev * float(equity) - existing_notional
+    return max(0.0, headroom)
+
+
 class TradeRiskRejected(Exception):
     """
     Raised when a trade must NOT proceed to execution - either because
@@ -129,6 +165,14 @@ async def assess_execution_risk(signal_service: SignalService, signal: Signal) -
     # Binance request. If no account is linked, `futures` is None and those
     # three metrics correctly stay UNKNOWN rather than being fabricated.
     futures = await _get_futures_account()
+    # LEVERAGE-FIT SIZING: a tight stop under a fixed risk % sizes a position
+    # so large it breaches the effective-leverage ceiling and the trade is
+    # rejected. Instead, cap the candidate to the exposure headroom that
+    # remains under the ceiling, so it is taken at a smaller size (risking less
+    # than risk %) rather than not at all. The SAME cap is handed to the sizing
+    # below AND to assess_new_trade, so the leverage the engine assesses and
+    # the position_size it returns describe one identical position.
+    max_notional = _leverage_headroom_notional(futures, risk_context)
     # Only SUPERSEDE the DB-derived portfolio when a real exchange snapshot
     # actually exists. Passing an exchange-backed context built from `None`
     # would silently DISCARD the open positions the risk context already
@@ -145,6 +189,7 @@ async def assess_execution_risk(signal_service: SignalService, signal: Signal) -
             calculate_position_size(
                 risk_context.account_balance, signal.entry_price,
                 signal.initial_stop_loss, risk_context.risk_percent,
+                max_notional=max_notional,
             ),
             leverage=_leverage_for(futures, symbol),
         ),
@@ -166,6 +211,7 @@ async def assess_execution_risk(signal_service: SignalService, signal: Signal) -
         open_positions=list(risk_context.open_positions),
         closed_trades_today=list(risk_context.closed_trades_today),
         equity_peak=risk_context.equity_peak,
+        max_notional=max_notional,
     )
 
     # Permanent, always-on instrumentation of the exposure calculation.
