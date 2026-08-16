@@ -98,6 +98,15 @@ class BinanceDataManager:
     LIQUIDATION_WS_URL = "wss://fstream.binance.com/ws/!forceOrder@arr"
     LIQUIDATION_WINDOW_SECONDS = 900.0  # 15 minutes
 
+    # Max time to wait for ANY websocket message before treating the
+    # connection as a silent zombie and forcing a reconnect. Binance pushes
+    # kline updates several times a second across all subscribed streams, so a
+    # gap this long only ever means the connection has stalled (TCP/keepalive
+    # alive but no data flowing) - the failure mode that once froze the candle
+    # stream, and therefore all scanning, silently for days because `async for`
+    # blocks forever with no error to trigger reconnection.
+    WS_STALE_TIMEOUT = 60.0
+
     def __init__(self, symbols: List[str], timeframes: Optional[List[str]] = None):
         self.symbols = [s.lower() for s in symbols]
         self.timeframes = timeframes or ["1m", "5m", "15m", "1h", "4h"]
@@ -248,14 +257,26 @@ class BinanceDataManager:
         backoff = 1.0
         while self._running:
             try:
-                async with websockets.connect(url, ping_interval=20) as ws:
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
                     self._ws = ws
                     self.is_connected = True
                     backoff = 1.0           # reset on successful connection
                     logger.info("WebSocket connected successfully.")
-                    async for message in ws:
-                        if not self._running:
-                            break
+                    while self._running:
+                        # Bound each receive so a stalled (zombie) connection
+                        # becomes a timeout -> reconnect, instead of blocking
+                        # forever with no error. See WS_STALE_TIMEOUT.
+                        try:
+                            message = await asyncio.wait_for(
+                                ws.recv(), timeout=self.WS_STALE_TIMEOUT
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                f"No WebSocket data for {self.WS_STALE_TIMEOUT:.0f}s - "
+                                f"connection stalled; forcing reconnect so candle data "
+                                f"(and scanning) does not silently freeze."
+                            )
+                            break  # exit -> `async with` closes ws -> outer loop reconnects
                         try:
                             await self._handle_message(json.loads(message))
                         except Exception as e:
