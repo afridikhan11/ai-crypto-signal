@@ -203,31 +203,6 @@ class SignalGenerator:
     # ICT entry usability (2026-07-30)
     # ------------------------------------------------------------------
     @staticmethod
-    def _zone_first_touch_entry(direction: Direction, entry_plan) -> float:
-        """The NEAR (first-touch) edge of the ICT entry zone.
-
-        `EntryPlan.entry_price` is the zone MIDPOINT, but a pending entry is
-        considered filled the instant price touches the zone edge, not its
-        middle - see `SignalMonitor._pending_outcome` (`low <= zone_top` for a
-        LONG, `high >= zone_bottom` for a SHORT). Resting the real exchange
-        LIMIT at the midpoint therefore demanded price travel deeper than the
-        model required, so most executed limits never filled and expired.
-
-        Pricing the entry at the first-touch edge instead makes the exchange
-        fill and the paper model agree and sharply raises the fill rate. It is
-        a slightly worse price (RR is recomputed on it by the caller), which is
-        the right trade for a limit that would otherwise never fill. A
-        zone-less plan (LIMIT/MARKET, no anchors) keeps its own entry_price.
-        """
-        top, bottom = entry_plan.anchor_top, entry_plan.anchor_bottom
-        if top is None or bottom is None:
-            return entry_plan.entry_price
-        hi, lo = (top, bottom) if top >= bottom else (bottom, top)
-        # LONG approaches a demand zone from above -> touches the TOP first.
-        # SHORT approaches a supply zone from below -> touches the BOTTOM first.
-        return hi if direction == Direction.LONG else lo
-
-    @staticmethod
     def _is_usable_entry(
         direction: Direction, entry: Optional[float], stop_loss: float, take_profit: float
     ) -> bool:
@@ -641,12 +616,7 @@ class SignalGenerator:
         entry_zone_top = entry_zone_bottom = None
 
         if is_ict_pending_entry() and entry_plan is not None:
-            # Price the entry at the zone's first-touch edge (not its midpoint)
-            # so a resting exchange LIMIT fills where the model already
-            # considers a pending entry filled - the fix for the high
-            # pending-entry expiry rate. The full zone is still recorded as the
-            # fill band below. RR is recomputed on this entry immediately after.
-            candidate = self._zone_first_touch_entry(direction, entry_plan)
+            candidate = entry_plan.entry_price
             if self._is_usable_entry(direction, candidate, stop_loss, take_profit):
                 entry_price_used = candidate
                 entry_type_used = entry_plan.entry_type.value
