@@ -63,6 +63,14 @@ class BinanceDataManager:
         - exception-safe user callbacks
     """
     BASE_WS_URL = "wss://fstream.binance.com/ws"
+    # COMBINED multi-stream endpoint. Binance serves many streams on one
+    # socket ONLY at `/stream?streams=a/b/c` - the `/ws/` path is for a SINGLE
+    # raw stream (`/ws/<name>`). Building the combined URL off BASE_WS_URL
+    # produced `/ws/stream?streams=...`, which Binance accepts but then sends
+    # NO data on (the payloads `_handle_message` parses - `{"stream","data"}` -
+    # only ever arrive from `/stream`). That silent no-data socket is what
+    # froze all live re-scanning; only the REST-based startup scan ever ran.
+    COMBINED_WS_URL = "wss://fstream.binance.com/stream"
     REST_URL = "https://fapi.binance.com"
     MAX_REST_CONCURRENCY = 10       # max parallel kline fetches
     MAX_RETRIES = 3
@@ -247,13 +255,22 @@ class BinanceDataManager:
     # ------------------------------------------------------------------
     # WebSocket with exponential backoff
     # ------------------------------------------------------------------
+    @classmethod
+    def _build_combined_stream_url(cls, symbols, timeframes) -> str:
+        """The COMBINED multi-stream websocket URL. Kept pure and separate so
+        the exact format is unit-tested: it must be `/stream?streams=a/b/c`
+        (combined), never `/ws/stream?...` (which connects but delivers no
+        data - the bug that froze live scanning)."""
+        streams = [f"{s}@kline_{tf}" for s in symbols for tf in timeframes]
+        return f"{cls.COMBINED_WS_URL}?streams={'/'.join(streams)}"
+
     async def start_websocket(self):
         if self._running:
             return
         self._running = True
-        streams = [f"{s}@kline_{tf}" for s in self.symbols for tf in self.timeframes]
-        url = f"{self.BASE_WS_URL}/stream?streams={'/'.join(streams)}"
-        logger.info(f"Connecting to Binance WebSocket: {len(streams)} streams")
+        stream_count = len(self.symbols) * len(self.timeframes)
+        url = self._build_combined_stream_url(self.symbols, self.timeframes)
+        logger.info(f"Connecting to Binance WebSocket: {stream_count} streams")
         backoff = 1.0
         while self._running:
             try:
