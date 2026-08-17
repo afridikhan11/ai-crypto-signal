@@ -327,6 +327,17 @@ class UniversalScanner:
         if get_engine_run_state() != "running":
             return
 
+        # The market-data feed streams symbol names in LOWERCASE (both the
+        # websocket stream names and the REST poller, which lower-cases them),
+        # but every scanner map - _symbol_locks, asset_profiles, generators -
+        # is keyed by the UPPERCASE symbol, exactly like the startup scan uses.
+        # Normalise here so a candle callback resolves the same way. (This path
+        # was never exercised until REST polling, since the websocket delivered
+        # no data on this deployment.)
+        symbol = symbol.upper()
+        if symbol not in self._symbol_locks:
+            return
+
         async with self._symbol_locks[symbol]:
             await self.analyze_symbol(symbol)
 
