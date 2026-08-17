@@ -369,3 +369,46 @@ class TestEngineRunStateGate:
         with patch.object(universal_scanner_module, "get_engine_run_state", return_value="running"):
             asyncio.run(s.on_new_candle("BTCUSDT", "1m", []))
         assert len(s.data_manager.get_dataframe_calls) == before
+
+
+class TestOnNewCandleSymbolCasing:
+    """The market-data feed (websocket stream names and the REST poller) emits
+    LOWERCASE symbols, but every scanner map is keyed by the UPPERCASE symbol.
+    on_new_candle must normalise, or every candle callback KeyErrors - which is
+    exactly what broke live scanning once REST polling started delivering."""
+
+    def test_lowercase_symbol_from_feed_resolves_and_analyzes_uppercase(self):
+        s = _scanner()
+        called = []
+
+        async def fake_analyze(sym):
+            called.append(sym)
+
+        s.analyze_symbol = fake_analyze
+        with patch.object(universal_scanner_module, "get_engine_run_state", return_value="running"):
+            asyncio.run(s.on_new_candle("btcusdt", PRIMARY_TIMEFRAME, []))
+        assert called == ["BTCUSDT"]
+
+    def test_unknown_symbol_is_ignored_not_raised(self):
+        s = _scanner()
+        called = []
+
+        async def fake_analyze(sym):
+            called.append(sym)
+
+        s.analyze_symbol = fake_analyze
+        with patch.object(universal_scanner_module, "get_engine_run_state", return_value="running"):
+            asyncio.run(s.on_new_candle("zzzusdt", PRIMARY_TIMEFRAME, []))
+        assert called == []
+
+    def test_non_primary_timeframe_is_skipped(self):
+        s = _scanner()
+        called = []
+
+        async def fake_analyze(sym):
+            called.append(sym)
+
+        s.analyze_symbol = fake_analyze
+        with patch.object(universal_scanner_module, "get_engine_run_state", return_value="running"):
+            asyncio.run(s.on_new_candle("btcusdt", "1m", []))
+        assert called == []
