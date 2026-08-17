@@ -66,6 +66,7 @@ PERFORMANCE
 """
 import asyncio
 import json
+import os
 import time
 from dataclasses import replace as _dataclass_replace
 from datetime import datetime, timedelta, timezone
@@ -232,14 +233,31 @@ class UniversalScanner:
         # anywhere - a trading-correctness failure, not just a reliability
         # one. Holding the references and attaching done-callbacks makes a
         # dead stream loud and prevents the GC case entirely.
-        self._ws_task = asyncio.create_task(self.data_manager.start_websocket())
+        # REST candle polling is the reliable, WEBSOCKET-INDEPENDENT data feed:
+        # some networks complete the Binance ws handshake but never receive
+        # stream data (silently freezing all scanning), while REST still works.
+        # It runs ALWAYS. The websocket is an optional faster feed layered on
+        # top - disable it with BINANCE_WS_ENABLED=false where it delivers no
+        # data, to avoid the every-60s stall/reconnect log noise.
+        self._rest_poll_task = asyncio.create_task(self.data_manager.start_rest_polling())
+        supervised = [("REST candle poller", self._rest_poll_task)]
+
+        if os.getenv("BINANCE_WS_ENABLED", "true").strip().lower() != "false":
+            self._ws_task = asyncio.create_task(self.data_manager.start_websocket())
+            supervised.append(("market data websocket", self._ws_task))
+        else:
+            self._ws_task = None
+            logger.info(
+                "Market-data websocket DISABLED (BINANCE_WS_ENABLED=false) - "
+                "using REST candle polling only."
+            )
+
         self._liquidation_task = asyncio.create_task(
             self.data_manager.start_liquidation_stream()
         )
-        for name, task in (
-            ("market data websocket", self._ws_task),
-            ("liquidation stream", self._liquidation_task),
-        ):
+        supervised.append(("liquidation stream", self._liquidation_task))
+
+        for name, task in supervised:
             task.add_done_callback(
                 lambda t, _name=name: self._market_data_task_done(_name, t)
             )
@@ -276,6 +294,7 @@ class UniversalScanner:
         # Cancel before closing the data manager so neither task is left
         # awaiting a socket that is being torn down underneath it.
         for task in (getattr(self, "_ws_task", None),
+                     getattr(self, "_rest_poll_task", None),
                      getattr(self, "_liquidation_task", None)):
             if task is not None and not task.done():
                 task.cancel()

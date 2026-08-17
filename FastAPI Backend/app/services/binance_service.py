@@ -115,12 +115,24 @@ class BinanceDataManager:
     # blocks forever with no error to trigger reconnection.
     WS_STALE_TIMEOUT = 60.0
 
+    # REST candle polling - a websocket-independent data feed. Some networks
+    # (observed: this project's cloud VM) complete the Binance websocket
+    # handshake but never receive stream data, which silently freezes all
+    # scanning. REST (fapi) works there, so this polls the latest CLOSED
+    # candle for every symbol/timeframe on a timer and drives the SAME
+    # on-candle callback the websocket does - so the scanner and monitor stay
+    # fed even with a dead stream. Matches the websocket's "closed candles
+    # only" behavior, so it is a drop-in data source, not a second one.
+    REST_POLL_INTERVAL = 60.0
+    REST_POLL_LIMIT = 2  # last CLOSED candle + the current forming one
+
     def __init__(self, symbols: List[str], timeframes: Optional[List[str]] = None):
         self.symbols = [s.lower() for s in symbols]
         self.timeframes = timeframes or ["1m", "5m", "15m", "1h", "4h"]
         self.data: Dict[str, SymbolData] = {s: SymbolData(s) for s in self.symbols}
         self.callback: Optional[Callable[[str, str, List[Candle]], Awaitable[None]]] = None
         self._running = False
+        self._rest_running = False
         self._ws = None
         self.is_connected = False
         self._lock = asyncio.Lock()
@@ -341,6 +353,56 @@ class BinanceDataManager:
             logger.error(f"Unhandled error processing WebSocket message: {e}")
 
     # ------------------------------------------------------------------
+    # REST candle polling - websocket-independent live data feed
+    # ------------------------------------------------------------------
+    async def start_rest_polling(self):
+        """Poll the latest CLOSED candles via REST and drive the on-candle
+        callback, so scanning and monitoring keep running even when the
+        websocket stream delivers no data (see REST_POLL_INTERVAL)."""
+        if self._rest_running:
+            return
+        self._rest_running = True
+        logger.info(
+            f"Starting REST candle polling every {self.REST_POLL_INTERVAL:.0f}s "
+            f"(websocket-independent data feed)."
+        )
+        while self._rest_running:
+            try:
+                await self._poll_klines_once()
+            except Exception as e:  # noqa: BLE001 - a poll cycle must never kill the loop
+                logger.exception(f"REST candle poll cycle failed: {e}")
+            await asyncio.sleep(self.REST_POLL_INTERVAL)
+
+    async def _poll_klines_once(self) -> None:
+        """One pass: for every symbol/timeframe, fetch the latest closed candle
+        and, when it is newer than what we hold, cache it and fire the callback
+        exactly as the websocket path does."""
+        for symbol, tf in self._symbol_tf_pairs:
+            if not self._rest_running:
+                return
+            try:
+                candles = await self.fetch_historical_klines(symbol, tf, limit=self.REST_POLL_LIMIT)
+            except Exception as e:  # noqa: BLE001 - one symbol/tf must not stop the sweep
+                logger.warning(f"REST poll failed for {symbol} {tf}: {e}")
+                continue
+            if not candles:
+                continue
+            # Binance returns the still-forming interval as the LAST element;
+            # the one before it is the last fully-closed candle. Use only the
+            # closed candle, matching the websocket's `kline['x']` gate.
+            closed = candles[-2] if len(candles) >= 2 else candles[-1]
+            prev_ts = self.data[symbol].last_update.get(tf)
+            is_new = prev_ts is None or closed.timestamp > prev_ts
+            async with self._lock:
+                self.data[symbol].add_candle(tf, closed)
+                snapshot = self.data[symbol].timeframes[tf].copy()
+            if is_new and self.callback:
+                try:
+                    await self.callback(symbol, tf, snapshot)
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"REST-poll callback error for {symbol} {tf}: {e}")
+
+    # ------------------------------------------------------------------
     # Liquidation stream (public, free, no API key - real forced-close events)
     # ------------------------------------------------------------------
     async def start_liquidation_stream(self):
@@ -554,6 +616,7 @@ class BinanceDataManager:
     # ------------------------------------------------------------------
     async def stop(self):
         self._running = False
+        self._rest_running = False
         self.is_connected = False
         # close websocket
         if self._ws is not None:
