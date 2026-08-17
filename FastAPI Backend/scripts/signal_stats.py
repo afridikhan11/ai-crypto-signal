@@ -32,6 +32,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.coin import Coin
 from app.models.signal import (
     DECIDED_STATUSES,
+    Direction,
     Signal,
     SignalStatus,
 )
@@ -61,6 +62,26 @@ async def _counts(session, executed_only: bool) -> dict:
         stmt = stmt.where(Signal.executed.is_(True))
     rows = (await session.execute(stmt)).all()
     return {status: count for status, count in rows}
+
+
+def _pnl_pct(signal) -> float | None:
+    """Realised price move as a % of entry, from the level the trade ACTUALLY
+    exited at - take_profit for TP_HIT, the (possibly TRAILED) stop_loss for
+    STOPPED. This is the honest win/loss: a STOPPED trade whose stop was
+    trailed into profit is a WIN, even though its status is 'STOPPED'. Returns
+    None for statuses whose exit price the database does not store (CANCELLED)."""
+    entry = signal.actual_fill_price or signal.entry_price
+    if not entry:
+        return None
+    if signal.status is SignalStatus.TP_HIT:
+        exit_price = signal.take_profit
+    elif signal.status is SignalStatus.STOPPED:
+        exit_price = signal.stop_loss  # the trailed stop at the moment it hit
+    else:
+        return None
+    if signal.direction is Direction.SHORT:
+        return (entry - exit_price) / entry * 100.0
+    return (exit_price - entry) / entry * 100.0
 
 
 def _print_block(title: str, counts: dict) -> None:
@@ -107,15 +128,41 @@ async def main() -> None:
             )
         ).all()
 
-        print("\n=== EXECUTED DECIDED TRADES ===")
+        print("\n=== EXECUTED DECIDED TRADES (by ACTUAL profit/loss) ===")
         if not rows:
             print("  (none yet — no executed trade has reached TP/SL/cancel)")
+        real_win = real_loss = 0
+        total_pnl = 0.0
         for signal, symbol in rows:
+            pnl = _pnl_pct(signal)
+            if pnl is None:
+                tag, pnl_str = "EARLY", "   n/a"
+            else:
+                total_pnl += pnl
+                if pnl > 0:
+                    real_win += 1
+                    tag = "WIN "
+                else:
+                    real_loss += 1
+                    tag = "LOSS"
+                pnl_str = f"{pnl:+6.2f}%"
             print(
                 f"  {symbol:<10} {signal.direction.value:<5} "
-                f"entry {signal.entry_price:<12} -> {signal.status.value:<10} "
-                f"| RR {signal.risk_reward:.2f} | conf {signal.confidence}"
+                f"{signal.status.value:<10} {tag} PnL {pnl_str} | conf {signal.confidence}"
             )
+
+        decided_by_pnl = real_win + real_loss
+        true_wr = (real_win / decided_by_pnl * 100.0) if decided_by_pnl else 0.0
+        print(f"  {'-' * 50}")
+        print(
+            f"  TRUE win-rate (by P/L, TP_HIT+STOPPED): {true_wr:.1f}%  "
+            f"({real_win}W / {real_loss}L)"
+        )
+        print(
+            f"  Sum of price-move P/L on those trades : {total_pnl:+.2f}%  "
+            f"(price move, not account % - size varies per trade)"
+        )
+        print("  EARLY = CANCELLED structure exit; its exit price is not stored.")
 
 
 if __name__ == "__main__":
