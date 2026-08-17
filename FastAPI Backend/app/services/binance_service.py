@@ -38,11 +38,22 @@ class SymbolData:
     last_update: Dict[str, int] = field(default_factory=dict)
 
     def add_candle(self, tf: str, candle: Candle):
-        if not self.timeframes[tf] or self.timeframes[tf][-1].timestamp != candle.timestamp:
-            self.timeframes[tf].append(candle)
-            # Keep a rolling window of at most 500 candles
-            if len(self.timeframes[tf]) > 500:
-                self.timeframes[tf].pop(0)
+        cds = self.timeframes[tf]
+        if not cds or candle.timestamp > cds[-1].timestamp:
+            # A genuinely newer candle - append and keep a rolling window of 500.
+            cds.append(candle)
+            if len(cds) > 500:
+                cds.pop(0)
+        elif candle.timestamp == cds[-1].timestamp:
+            # Same interval seen again - replace in place so a completed candle
+            # overwrites the earlier still-forming version (REST polling relies
+            # on this). Never appends a duplicate.
+            cds[-1] = candle
+        else:
+            # An OLDER candle than the newest we hold - ignore it entirely so
+            # the series can never go out of order (would corrupt every
+            # indicator that reads it).
+            return
         self.last_update[tf] = candle.timestamp
 
 
@@ -133,6 +144,11 @@ class BinanceDataManager:
         self.callback: Optional[Callable[[str, str, List[Candle]], Awaitable[None]]] = None
         self._running = False
         self._rest_running = False
+        # (symbol, tf) -> timestamp of the last CLOSED candle the REST poller
+        # has already handled, so it fires the scan callback exactly once when
+        # a new candle closes - independent of `last_update`, which the
+        # startup hydrate sets from the still-forming candle.
+        self._rest_last_closed: Dict[Tuple[str, str], int] = {}
         self._ws = None
         self.is_connected = False
         self._lock = asyncio.Lock()
@@ -374,9 +390,9 @@ class BinanceDataManager:
             await asyncio.sleep(self.REST_POLL_INTERVAL)
 
     async def _poll_klines_once(self) -> None:
-        """One pass: for every symbol/timeframe, fetch the latest closed candle
-        and, when it is newer than what we hold, cache it and fire the callback
-        exactly as the websocket path does."""
+        """One pass: for every symbol/timeframe, look at the latest CLOSED
+        candle and, when a new one has closed since we last looked, cache it and
+        fire the callback exactly as the websocket path does."""
         for symbol, tf in self._symbol_tf_pairs:
             if not self._rest_running:
                 return
@@ -391,16 +407,24 @@ class BinanceDataManager:
             # the one before it is the last fully-closed candle. Use only the
             # closed candle, matching the websocket's `kline['x']` gate.
             closed = candles[-2] if len(candles) >= 2 else candles[-1]
-            prev_ts = self.data[symbol].last_update.get(tf)
-            is_new = prev_ts is None or closed.timestamp > prev_ts
+            key = (symbol, tf)
+            seen = self._rest_last_closed.get(key)
+            if seen is not None and closed.timestamp <= seen:
+                continue  # this candle was already handled
+            first_observation = seen is None
+            self._rest_last_closed[key] = closed.timestamp
             async with self._lock:
                 self.data[symbol].add_candle(tf, closed)
                 snapshot = self.data[symbol].timeframes[tf].copy()
-            if is_new and self.callback:
-                try:
-                    await self.callback(symbol, tf, snapshot)
-                except Exception as e:  # noqa: BLE001
-                    logger.error(f"REST-poll callback error for {symbol} {tf}: {e}")
+            # Skip the very first observation: the startup scan already covered
+            # the current candle, so only a candle that CLOSES afterwards is a
+            # new event worth re-scanning on.
+            if first_observation or not self.callback:
+                continue
+            try:
+                await self.callback(symbol, tf, snapshot)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"REST-poll callback error for {symbol} {tf}: {e}")
 
     # ------------------------------------------------------------------
     # Liquidation stream (public, free, no API key - real forced-close events)
