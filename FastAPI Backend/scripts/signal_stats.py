@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 
 # Allow running as `python scripts/signal_stats.py`: Python puts scripts/ on
 # sys.path, not the project root, so add the parent (the app package root).
@@ -36,6 +37,16 @@ from app.models.signal import (
     Signal,
     SignalStatus,
 )
+
+# Binance income-ledger types we care about for the real-money view. Every
+# `income` value is signed the way the account is credited/debited: a
+# COMMISSION is negative (a cost), FUNDING_FEE is +/- depending on side.
+_REALIZED = "REALIZED_PNL"
+_COMMISSION = "COMMISSION"
+_FUNDING = "FUNDING_FEE"
+# Binance caps one /fapi/v1/income query to a 7-day window, so a longer
+# history is paged in windows of this size.
+_INCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 # The statuses we tally, in a sensible reading order.
 _ORDER = [
@@ -82,6 +93,123 @@ def _pnl_pct(signal) -> float | None:
     if signal.direction is Direction.SHORT:
         return (entry - exit_price) / entry * 100.0
     return (exit_price - entry) / entry * 100.0
+
+
+def _aggregate_income(items) -> dict:
+    """Fold a flat list of income-ledger entries into totals and a per-symbol
+    breakdown. `income` is already signed by Binance (costs negative), so a
+    plain sum gives the real net. Pure function - no I/O - so it is trivially
+    testable and reused by the account-truth print below."""
+    totals = {_REALIZED: 0.0, _COMMISSION: 0.0, _FUNDING: 0.0, "OTHER": 0.0}
+    per_symbol: dict[str, dict] = {}
+    for it in items:
+        bucket = it.income_type if it.income_type in totals else "OTHER"
+        totals[bucket] += it.income
+        if it.symbol:
+            sym = per_symbol.setdefault(
+                it.symbol, {_REALIZED: 0.0, _COMMISSION: 0.0, _FUNDING: 0.0}
+            )
+            if it.income_type in sym:
+                sym[it.income_type] += it.income
+    # Trading net EXCLUDES "OTHER" (transfers, deposits, bonuses) - those are
+    # capital movements, not performance, and would distort the bottom line.
+    net = totals[_REALIZED] + totals[_COMMISSION] + totals[_FUNDING]
+    return {"totals": totals, "per_symbol": per_symbol, "net": net}
+
+
+async def _fetch_income_windowed(svc, start_ms: int, end_ms: int) -> list:
+    """Page the futures income ledger in <=7-day windows (Binance's cap) and
+    return the concatenated entries."""
+    items: list = []
+    cursor = start_ms
+    while cursor < end_ms:
+        chunk_end = min(cursor + _INCOME_WINDOW_MS, end_ms)
+        chunk = await svc.get_income_history(
+            limit=1000, start_time=cursor, end_time=chunk_end
+        )
+        items.extend(chunk)
+        cursor = chunk_end + 1
+    return items
+
+
+async def _print_exchange_truth(session) -> None:
+    """Real money, straight from the exchange: realized PnL, commissions and
+    funding actually booked to the account - the figures the price-move %
+    above cannot show (it ignores fees, funding and fill slippage).
+
+    Degrades honestly: if no API credentials are saved, the exchange is
+    unreachable, or the account has no futures income in the window, it prints
+    why and returns rather than failing the whole report."""
+    print("\n=== EXCHANGE TRUTH (real realized P/L, fees & funding) ===")
+
+    earliest = (
+        await session.execute(
+            select(func.min(Signal.executed_at)).where(Signal.executed.is_(True))
+        )
+    ).scalar()
+    if earliest is None:
+        print("  (no executed trades yet - nothing to reconcile)")
+        return
+
+    try:
+        from app.services import binance_credentials
+
+        svc = binance_credentials.build_service_from_saved()
+    except FileNotFoundError:
+        print("  (skipped - no Binance API credentials saved on this host)")
+        return
+    except Exception as exc:  # decrypt/config error - never crash the report
+        print(f"  (skipped - could not build account client: {exc})")
+        return
+
+    # One day of slack before the first fill covers any funding booked just
+    # ahead of entry; end at 'now'.
+    start_ms = int(earliest.timestamp() * 1000) - 24 * 60 * 60 * 1000
+    end_ms = int(time.time() * 1000)
+
+    try:
+        async with svc:
+            items = await _fetch_income_windowed(svc, start_ms, end_ms)
+    except Exception as exc:
+        print(f"  (skipped - exchange income fetch failed: {exc})")
+        return
+
+    if not items:
+        print(
+            "  (no futures income returned for the trade window - if you DID "
+            "trade, the account client's futures host may differ from the "
+            "bot's; check BINANCE_FUTURES_TESTNET_URL)"
+        )
+        return
+
+    agg = _aggregate_income(items)
+    t = agg["totals"]
+    print(f"  Realized P/L (gross)    : {t[_REALIZED]:+.4f} USDT")
+    print(f"  Commissions (fees)      : {t[_COMMISSION]:+.4f} USDT")
+    print(f"  Funding                 : {t[_FUNDING]:+.4f} USDT")
+    if t["OTHER"]:
+        print(f"  Other (transfers/bonus) : {t['OTHER']:+.4f} USDT  (not counted in NET)")
+    print(f"  {'-' * 40}")
+    print(f"  NET trading (fees+funding, excl. transfers): {agg['net']:+.4f} USDT")
+
+    per_symbol = agg["per_symbol"]
+    if per_symbol:
+        print("\n  Per-symbol net (realized + fees + funding):")
+        rows = sorted(
+            per_symbol.items(),
+            key=lambda kv: kv[1][_REALIZED] + kv[1][_COMMISSION] + kv[1][_FUNDING],
+        )
+        for sym, s in rows:
+            sym_net = s[_REALIZED] + s[_COMMISSION] + s[_FUNDING]
+            print(
+                f"    {sym:<10} net {sym_net:+9.4f}  "
+                f"(realized {s[_REALIZED]:+.2f} | fees {s[_COMMISSION]:+.2f} | "
+                f"funding {s[_FUNDING]:+.2f})"
+            )
+    print(
+        "\n  NOTE: this is the real account bottom line; the price-move % above "
+        "excludes fees, funding and fill slippage, so it reads better than this."
+    )
 
 
 def _print_block(title: str, counts: dict) -> None:
@@ -163,6 +291,10 @@ async def main() -> None:
             f"(price move, not account % - size varies per trade)"
         )
         print("  EARLY = CANCELLED structure exit; its exit price is not stored.")
+
+        # Real-money reconciliation from the exchange ledger (fees + funding +
+        # slippage included). Degrades honestly if the exchange isn't reachable.
+        await _print_exchange_truth(session)
 
 
 if __name__ == "__main__":
