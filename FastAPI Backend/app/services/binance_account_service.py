@@ -68,13 +68,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import time
 from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
 from loguru import logger
 from pydantic import BaseModel, Field
+
+from app.services.binance_time_sync import get_time_sync
 
 
 # ==========================================================================
@@ -227,7 +228,10 @@ class BinanceAccountService:
     FUTURES_MAINNET_URL = "https://fapi.binance.com"
     FUTURES_TESTNET_URL = "https://demo-fapi.binance.com"
 
-    RECV_WINDOW = 5000
+    # Widened from 5000 -> 10000 (Binance max is 60000) to tolerate host clock
+    # skew; binance_time_sync corrects the timestamp itself, and a modest
+    # window keeps the replay-attack surface small.
+    RECV_WINDOW = 10000
     HTTP_TIMEOUT = 15.0
 
     def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
@@ -241,6 +245,11 @@ class BinanceAccountService:
         self.spot_base_url = self.SPOT_TESTNET_URL if testnet else self.SPOT_MAINNET_URL
         self.futures_base_url = self.FUTURES_TESTNET_URL if testnet else self.FUTURES_MAINNET_URL
         self._client = httpx.AsyncClient(timeout=self.HTTP_TIMEOUT)
+        # Binance-aligned timestamps (fixes -1021 clock-skew rejections). The
+        # offset is host-clock-vs-Binance and identical across Binance hosts,
+        # so one synchroniser against the futures time endpoint serves every
+        # signed request this read-only client makes (spot and futures alike).
+        self._time_sync = get_time_sync(self.futures_base_url)
 
     async def close(self):
         await self._client.aclose()
@@ -266,14 +275,39 @@ class BinanceAccountService:
         params["signature"] = signature
         return params
 
-    async def _signed_get(self, base_url: str, path: str, params: Optional[dict] = None) -> httpx.Response:
-        """SIGNED read-only GET request. Never used for order placement/cancellation."""
-        params = dict(params or {})
-        params["timestamp"] = int(time.time() * 1000)
-        params.setdefault("recvWindow", self.RECV_WINDOW)
-        params = self._sign(params)
+    async def _send_signed_get(self, base_url: str, path: str, params: Optional[dict]) -> httpx.Response:
+        """Stamp a fresh Binance-aligned timestamp, sign a copy, and send ONE
+        GET. Leaves `params` untouched so the caller can resend for a retry."""
+        body = dict(params or {})
+        body["timestamp"] = await self._time_sync.now_ms()
+        body.setdefault("recvWindow", self.RECV_WINDOW)
+        signed = self._sign(dict(body))
         headers = {"X-MBX-APIKEY": self._api_key}
-        return await self._client.get(f"{base_url}{path}", params=params, headers=headers)
+        return await self._client.get(f"{base_url}{path}", params=signed, headers=headers)
+
+    async def _signed_get(self, base_url: str, path: str, params: Optional[dict] = None) -> httpx.Response:
+        """SIGNED read-only GET request. Never used for order placement/cancellation.
+
+        On a -1021 (timestamp outside recvWindow) it forces a clock re-sync and
+        retries EXACTLY ONCE. Every call here is an idempotent read, so a retry
+        can never cause a side effect."""
+        resp = await self._send_signed_get(base_url, path, params)
+        if resp.status_code >= 400 and self._error_code(resp) == -1021:
+            logger.warning(
+                "Binance -1021 (clock skew) on GET {}; re-syncing time and retrying once.",
+                path,
+            )
+            await self._time_sync.resync()
+            resp = await self._send_signed_get(base_url, path, params)
+        return resp
+
+    @staticmethod
+    def _error_code(resp: httpx.Response) -> Optional[int]:
+        """The numeric Binance error code from an error response body, or None."""
+        try:
+            return resp.json().get("code")
+        except Exception:
+            return None
 
     async def _public_get(self, base_url: str, path: str, params: Optional[dict] = None) -> httpx.Response:
         """Unsigned public GET (e.g. ticker prices for USDT valuation) - no credentials sent."""

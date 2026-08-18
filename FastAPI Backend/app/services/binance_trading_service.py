@@ -78,9 +78,19 @@ import httpx
 from loguru import logger
 from pydantic import BaseModel
 
+from app.services.binance_time_sync import get_time_sync
+
 
 class BinanceTradingError(Exception):
-    """Raised when a Binance order-placement request fails or returns an error payload."""
+    """Raised when a Binance order-placement request fails or returns an error payload.
+
+    Carries the numeric Binance error `code` (e.g. -1021 for a timestamp
+    outside the recvWindow) when the response body supplied one, so callers can
+    react to a specific failure without string-matching the message."""
+
+    def __init__(self, message: str, code: Optional[int] = None):
+        super().__init__(message)
+        self.code = code
 
 
 class OrderResult(BaseModel):
@@ -136,7 +146,11 @@ class BinanceTradingService:
         "BINANCE_FUTURES_TESTNET_URL", "https://testnet.binancefuture.com"
     )
 
-    RECV_WINDOW = 5000
+    # Widened from 5000 -> 10000 (Binance max is 60000). On testnet the host
+    # clock was ~2000ms off Binance, eating 40% of a 5s window; 10s leaves
+    # ample slack once binance_time_sync corrects the timestamp too. Kept
+    # modest deliberately: a larger window widens the replay-attack surface.
+    RECV_WINDOW = 10000
     HTTP_TIMEOUT = 15.0
     EXCHANGE_INFO_CACHE_TTL = 3600.0  # symbol precision rarely changes
 
@@ -158,6 +172,10 @@ class BinanceTradingService:
         self.base_url = self.FUTURES_TESTNET_URL if testnet else self.FUTURES_MAINNET_URL
         self._client = httpx.AsyncClient(timeout=self.HTTP_TIMEOUT)
         self._exchange_info_cache: Optional[tuple[dict, float]] = None
+        # Binance-aligned timestamps for every signed request (fixes -1021
+        # clock-skew rejections). Shared per host, so all service instances
+        # pointing at this base_url reuse one offset.
+        self._time_sync = get_time_sync(self.base_url)
 
     async def close(self):
         await self._client.aclose()
@@ -179,15 +197,49 @@ class BinanceTradingService:
         params["signature"] = signature
         return params
 
+    async def _send_signed(self, method: str, path: str, params: dict) -> httpx.Response:
+        """Stamp a fresh Binance-aligned timestamp, sign, and send ONE signed
+        request. Kept side-effect-free on `params` (signs a copy) so a caller
+        can re-stamp and resend the SAME params for a retry."""
+        body = dict(params)
+        body["timestamp"] = await self._time_sync.now_ms()
+        body.setdefault("recvWindow", self.RECV_WINDOW)
+        signed = self._sign(dict(body))
+        headers = {"X-MBX-APIKEY": self._api_key}
+        return await self._client.request(
+            method, f"{self.base_url}{path}", params=signed, headers=headers
+        )
+
+    async def _signed_request(self, method: str, path: str, params: dict) -> dict:
+        """Send a signed request, and on a -1021 (timestamp outside recvWindow)
+        force a clock re-sync and retry EXACTLY ONCE.
+
+        Retrying an order-placing POST on -1021 is safe: -1021 is a
+        timestamp-validation rejection that Binance performs BEFORE the order
+        is ever accepted or matched, so no order can have been placed. As a
+        second backstop, order legs carry a deterministic newClientOrderId
+        (see `_client_order_id` / `_stop_replacement_client_order_id`), so even
+        a spurious duplicate would be rejected by Binance with -2010 rather than
+        opening a second position. Any OTHER error is surfaced immediately -
+        never retried - so an ambiguous failure can't double-submit."""
+        resp = await self._send_signed(method, path, params)
+        try:
+            return self._parse_or_raise(resp, f"{method} {path}")
+        except BinanceTradingError as exc:
+            if exc.code != -1021:
+                raise
+            logger.warning(
+                "Binance -1021 (clock skew) on {} {}; re-syncing time and retrying once.",
+                method,
+                path,
+            )
+            await self._time_sync.resync()
+            resp = await self._send_signed(method, path, params)
+            return self._parse_or_raise(resp, f"{method} {path}")
+
     async def _signed_post(self, path: str, params: dict) -> dict:
         """The ONLY method in this codebase that sends an order-placing POST to Binance."""
-        params = dict(params)
-        params["timestamp"] = int(time.time() * 1000)
-        params.setdefault("recvWindow", self.RECV_WINDOW)
-        params = self._sign(params)
-        headers = {"X-MBX-APIKEY": self._api_key}
-        resp = await self._client.post(f"{self.base_url}{path}", params=params, headers=headers)
-        return self._parse_or_raise(resp, f"POST {path}")
+        return await self._signed_request("POST", path, params)
 
     async def _public_get(self, path: str, params: Optional[dict] = None) -> dict:
         resp = await self._client.get(f"{self.base_url}{path}", params=params or {})
@@ -199,24 +251,12 @@ class BinanceTradingService:
         back (a dict for most endpoints, a list for `/fapi/v1/openOrders`) -
         `_parse_or_raise` only inspects the HTTP status, not the payload
         shape, so it's safe for both."""
-        params = dict(params or {})
-        params["timestamp"] = int(time.time() * 1000)
-        params.setdefault("recvWindow", self.RECV_WINDOW)
-        params = self._sign(params)
-        headers = {"X-MBX-APIKEY": self._api_key}
-        resp = await self._client.get(f"{self.base_url}{path}", params=params, headers=headers)
-        return self._parse_or_raise(resp, f"GET {path}")
+        return await self._signed_request("GET", path, dict(params or {}))
 
     async def _signed_delete(self, path: str, params: dict) -> dict:
         """The ONLY method in this codebase that sends an order-cancelling
         DELETE to Binance."""
-        params = dict(params)
-        params["timestamp"] = int(time.time() * 1000)
-        params.setdefault("recvWindow", self.RECV_WINDOW)
-        params = self._sign(params)
-        headers = {"X-MBX-APIKEY": self._api_key}
-        resp = await self._client.delete(f"{self.base_url}{path}", params=params, headers=headers)
-        return self._parse_or_raise(resp, f"DELETE {path}")
+        return await self._signed_request("DELETE", path, params)
 
     @staticmethod
     def _parse_or_raise(resp: httpx.Response, context: str):
@@ -228,7 +268,9 @@ class BinanceTradingService:
                 code = body.get("code")
             except Exception:
                 pass
-            raise BinanceTradingError(f"{context} failed ({resp.status_code}, code={code}): {msg}")
+            raise BinanceTradingError(
+                f"{context} failed ({resp.status_code}, code={code}): {msg}", code=code
+            )
         return resp.json()
 
     # ------------------------------------------------------------------
