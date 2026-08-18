@@ -751,11 +751,25 @@ class BinanceAccountService:
     # PnL, commission, transfers. Account-wide, no symbol required.
     # ----------------------------------------------------------------
     async def get_income_history(
-        self, limit: int = 50, income_type: Optional[str] = None
+        self,
+        limit: int = 50,
+        income_type: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> list[IncomeHistoryItem]:
+        """Futures account ledger (realized PnL, commission, funding, ...).
+
+        `start_time`/`end_time` are epoch-ms bounds. Binance caps a single
+        income query to a 7-day window and to the most recent 7 days when no
+        bounds are given, so a caller wanting a longer history must page in
+        <=7-day windows itself (see scripts/signal_stats.py)."""
         params: dict = {"limit": limit}
         if income_type:
             params["incomeType"] = income_type
+        if start_time is not None:
+            params["startTime"] = start_time
+        if end_time is not None:
+            params["endTime"] = end_time
 
         try:
             resp = await self._signed_get(self.futures_base_url, "/fapi/v1/income", params)
