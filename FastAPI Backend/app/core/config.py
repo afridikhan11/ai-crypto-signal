@@ -70,6 +70,59 @@ class Settings(BaseSettings):
         default=False, alias="STRATEGY_CEX_DEX_DIVERGENCE_ENABLED"
     )
 
+    # ICT Levels strategy knobs (app/strategy/ict_levels_strategy.py). All
+    # tunable so the same engine can be recalibrated without code changes.
+    ict_htf_timeframe: str = Field(default="4h", alias="ICT_HTF_TIMEFRAME")
+    ict_ltf_timeframe: str = Field(default="15m", alias="ICT_LTF_TIMEFRAME")
+    ict_dealing_range_lookback: int = Field(default=50, alias="ICT_DEALING_RANGE_LOOKBACK")
+    ict_equal_level_tolerance_pct: float = Field(
+        default=0.05, alias="ICT_EQUAL_LEVEL_TOLERANCE_PCT"
+    )
+    ict_ote_low: float = Field(default=0.62, alias="ICT_OTE_LOW")
+    ict_ote_high: float = Field(default=0.79, alias="ICT_OTE_HIGH")
+    ict_min_risk_reward: float = Field(default=2.0, alias="ICT_MIN_RISK_REWARD")
+    # No counter-HTF-bias entries unless this is explicitly enabled.
+    ict_allow_counter_bias: bool = Field(default=False, alias="ICT_ALLOW_COUNTER_BIAS")
+
+    # CEX-DEX Divergence strategy knobs (app/strategy/cex_dex_divergence_strategy.py).
+    dexscreener_min_liquidity_usd: float = Field(
+        default=100_000.0, alias="DEXSCREENER_MIN_LIQUIDITY_USD"
+    )
+    dexscreener_staleness_seconds: float = Field(
+        default=120.0, alias="DEXSCREENER_STALENESS_SECONDS"
+    )
+    # A single divergence print is usually a bad quote; require it to persist
+    # across this many consecutive polls before a signal may fire.
+    divergence_min_consecutive_polls: int = Field(
+        default=3, alias="DIVERGENCE_MIN_CONSECUTIVE_POLLS"
+    )
+    # Minimum |divergence_pct| to treat as a real dislocation, and how much the
+    # (correlated-by-construction) funding rate is allowed to confirm it.
+    divergence_threshold_pct: float = Field(default=1.0, alias="DIVERGENCE_THRESHOLD_PCT")
+    divergence_funding_weight: float = Field(default=0.3, alias="DIVERGENCE_FUNDING_WEIGHT")
+    # Cap position notional to this fraction of the DEX pool's USD liquidity.
+    divergence_max_pool_depth_fraction: float = Field(
+        default=0.01, alias="DIVERGENCE_MAX_POOL_DEPTH_FRACTION"
+    )
+
+    # Smart AI premium page owner gate (app/api/v1/endpoints/smartai.py). The
+    # ONLY credential is a bcrypt hash of the owner password in the env - never
+    # the plaintext, never in the repo, never in the WPF client (which
+    # decompiles trivially). Tokens are signed with SECRET_KEY. Every
+    # /api/v1/smartai/* route requires a valid token regardless of REQUIRE_AUTH.
+    owner_password_hash: str = Field(default="", alias="OWNER_PASSWORD_HASH")
+    smartai_token_expire_minutes: int = Field(
+        default=720, alias="SMARTAI_TOKEN_EXPIRE_MINUTES"  # 12h access token
+    )
+    smartai_refresh_expire_minutes: int = Field(
+        default=10_080, alias="SMARTAI_REFRESH_EXPIRE_MINUTES"  # 7d refresh token
+    )
+    smartai_login_max_attempts: int = Field(default=5, alias="SMARTAI_LOGIN_MAX_ATTEMPTS")
+    smartai_login_window_minutes: int = Field(default=15, alias="SMARTAI_LOGIN_WINDOW_MINUTES")
+    smartai_login_lockout_minutes: int = Field(
+        default=15, alias="SMARTAI_LOGIN_LOCKOUT_MINUTES"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
