@@ -56,6 +56,20 @@ class Settings(BaseSettings):
     # are testnet, so it can never place a mainnet order.
     auto_execute_testnet: bool = Field(default=False, alias="AUTO_EXECUTE_TESTNET")
 
+    # ---- Smart AI module (app/strategy/base_strategy.py + strategies) ----
+    # Master switch for the whole module and each strategy within it. Every
+    # flag defaults OFF and the module defaults to TESTNET, so a fresh install
+    # never trades a Smart AI strategy until it is explicitly turned on
+    # (task: both strategies default to disabled + testnet on first run).
+    smartai_enabled: bool = Field(default=False, alias="SMARTAI_ENABLED")
+    smartai_testnet: bool = Field(default=True, alias="SMARTAI_TESTNET")
+    strategy_ict_levels_enabled: bool = Field(
+        default=False, alias="STRATEGY_ICT_LEVELS_ENABLED"
+    )
+    strategy_cex_dex_divergence_enabled: bool = Field(
+        default=False, alias="STRATEGY_CEX_DEX_DIVERGENCE_ENABLED"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
