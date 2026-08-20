@@ -29,7 +29,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import AsyncSessionLocal
@@ -39,6 +39,32 @@ from app.services.binance_trading_service import BinanceTradingError
 from app.services.execution_risk import assess_execution_risk, TradeRiskRejected
 from app.services.signal_service import SignalService
 from app.services.trading_settings import get_auto_trading_enabled
+
+
+# Signals this executor is allowed to place orders for: ONLY the legacy
+# production pipeline (strategy_id NULL for freshly-generated signals, or
+# "legacy" for pre-Smart-AI rows). Smart AI signals carry a named strategy_id
+# and are deliberately excluded - see pending_execution_stmt().
+LEGACY_STRATEGY_ID = "legacy"
+
+
+def pending_execution_stmt():
+    """The select for signals eligible for auto-execution.
+
+    Observe-only guard for the Smart AI module: Smart AI signals (strategy_id =
+    a named strategy) are recorded for attribution/analysis but MUST NOT be
+    auto-executed here. Their execution is a separate, deliberate opt-in, so
+    enabling a strategy can never silently start placing real testnet orders
+    mixed in with the legacy bot's trades."""
+    return (
+        select(Signal)
+        .options(selectinload(Signal.coin))
+        .where(
+            Signal.executed.is_(False),
+            Signal.status.in_(NON_TERMINAL_STATUSES),
+            or_(Signal.strategy_id.is_(None), Signal.strategy_id == LEGACY_STRATEGY_ID),
+        )
+    )
 
 
 def execution_allowed(creds: dict | None, auto_trading_enabled: bool) -> bool:
@@ -107,15 +133,7 @@ class AutoExecutor:
             return
 
         async with AsyncSessionLocal() as session:
-            stmt = (
-                select(Signal)
-                .options(selectinload(Signal.coin))
-                .where(
-                    Signal.executed.is_(False),
-                    Signal.status.in_(NON_TERMINAL_STATUSES),
-                )
-            )
-            signals = (await session.execute(stmt)).scalars().unique().all()
+            signals = (await session.execute(pending_execution_stmt())).scalars().unique().all()
             now = asyncio.get_event_loop().time()
             for signal in signals:
                 sid = str(signal.id)
