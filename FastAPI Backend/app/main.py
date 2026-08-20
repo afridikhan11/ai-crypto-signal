@@ -282,6 +282,16 @@ async def on_startup():
 
     logger.info("Scanner, signal monitor, and WebSocket listener started.")
 
+    # Smart AI module - owner-gated multi-strategy runner. Off unless
+    # SMARTAI_ENABLED; fully guarded so a wiring failure can never break the
+    # main app startup (production defaults leave this a no-op).
+    try:
+        from app.strategy.smart_ai_startup import start_smart_ai
+
+        await start_smart_ai(app)
+    except Exception as exc:  # noqa: BLE001 - never let the optional module break startup
+        logger.exception("Smart AI startup failed (continuing without it): {}", exc)
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -311,6 +321,9 @@ async def on_shutdown():
 
     if hasattr(app.state, "signal_monitor"):
         await app.state.signal_monitor.stop()
+
+    if hasattr(app.state, "smart_ai_runner"):
+        await app.state.smart_ai_runner.stop()
 
     await signal_ws_manager.stop_listener()
 

@@ -104,6 +104,17 @@ class Signal(Base, TimestampMixin):
     # win/loss outcomes once enough closed trades have accumulated.
     score_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # ---- Smart AI module (2026-08-20) ----
+    # Which strategy produced this signal, for per-strategy performance
+    # attribution (the whole point of the module). NULL / "legacy" = the
+    # original production ICT pipeline that predates Smart AI. Indexed because
+    # every per-strategy stats read filters on it.
+    strategy_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # The individual strategy conditions evaluated for this signal - each
+    # {"name", "passed", "detail"} - i.e. the "which rules fired" explanation
+    # surfaced in the Smart AI UI. NULL for legacy signals.
+    rules_fired: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     # Auto Trading execution tracking - set once (and only once) when this
     # signal's suggested entry/SL/TP is actually placed on Binance via
     # POST /trading/execute/{signal_id}. `executed` gates against placing

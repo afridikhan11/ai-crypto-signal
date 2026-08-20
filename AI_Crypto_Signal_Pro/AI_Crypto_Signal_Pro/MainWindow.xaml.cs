@@ -83,6 +83,10 @@ namespace AI_Crypto_Signal_Pro
                     break;
 
                 case 11:
+                    _navigation.Navigate(new SmartAiView());
+                    break;
+
+                case 12:
                     _navigation.Navigate(new SettingsView());
                     break;
 
