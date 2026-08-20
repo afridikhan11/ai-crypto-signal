@@ -17,4 +17,9 @@ loguru==0.7.3
 cryptography==44.0.0
 pyjwt==2.13.0
 passlib[bcrypt]==1.7.4
+# passlib 1.7.4 reads bcrypt.__about__.__version__, which bcrypt removed in
+# 4.1+; an unpinned bcrypt therefore breaks every hash/verify with a spurious
+# "password cannot be longer than 72 bytes". Pin to the last compatible line so
+# owner-gate login and generate_password_hash.py actually work.
+bcrypt<4.1
 python-multipart==0.0.20
