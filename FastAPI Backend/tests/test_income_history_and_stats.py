@@ -30,10 +30,11 @@ def _load_stats_module():
 
 
 class _Income:
-    def __init__(self, income_type, income, symbol):
+    def __init__(self, income_type, income, symbol, time=0):
         self.income_type = income_type
         self.income = income
         self.symbol = symbol
+        self.time = time
 
 
 # ======================================================================
@@ -114,3 +115,50 @@ class TestAggregateIncome:
         agg = self.stats._aggregate_income(items)
         assert round(agg["net"], 2) == 10.0             # only the realized P/L
         assert round(agg["totals"]["OTHER"], 2) == 1500.0  # tracked, but apart
+
+
+# ======================================================================
+# 3. Bot-only attribution (entry-anchored windows + split)
+# ======================================================================
+class TestBotAttribution:
+    def setup_method(self):
+        self.stats = _load_stats_module()
+
+    def test_windows_run_entry_to_next_entry_then_now(self):
+        # Two bot entries on NEAR, one on SOL. Windows end at the NEXT entry
+        # (or 'now'), NOT at any close - so a manual close after the bot's own
+        # closed_at is still inside the window.
+        w = self.stats._windows_from_entries(
+            [("NEARUSDT", 1000), ("NEARUSDT", 5000), ("SOLUSDT", 2000)], now_ms=9000
+        )
+        assert w["NEARUSDT"] == [(1000, 5000), (5000, 9000)]
+        assert w["SOLUSDT"] == [(2000, 9000)]
+
+    def test_in_window_respects_entry_and_exit_slack(self):
+        w = {"NEARUSDT": [(1_000_000, 2_000_000)]}
+        # inside
+        assert self.stats._in_bot_window("NEARUSDT", 1_500_000, w) is True
+        # just before entry, within the entry buffer
+        assert self.stats._in_bot_window("NEARUSDT", 1_000_000 - 60_000, w) is True
+        # long before the first entry -> excluded
+        assert self.stats._in_bot_window("NEARUSDT", 100_000, w) is False
+        # a symbol the bot never opened -> excluded
+        assert self.stats._in_bot_window("AKEUSDT", 1_500_000, w) is False
+
+    def test_split_isolates_bot_from_manual(self):
+        # Realistic-scale ms so the (2-5 min) buffers don't swamp the gaps.
+        entry, mid, now, before = 10_000_000, 60_000_000, 90_000_000, 1_000_000
+        windows = self.stats._windows_from_entries([("NEARUSDT", entry)], now_ms=now)
+        items = [
+            _Income("REALIZED_PNL", 374.0, "NEARUSDT", time=mid),   # bot-opened, manually closed later
+            _Income("COMMISSION", -15.0, "NEARUSDT", time=mid),
+            _Income("REALIZED_PNL", -74.0, "AKEUSDT", time=mid),    # fully-manual, bot never opened AKE
+            _Income("REALIZED_PNL", 5.0, "NEARUSDT", time=before),  # NEAR before the bot's first entry
+        ]
+        bot, other = self.stats._split_bot_income(items, windows)
+        bot_syms = {i.symbol for i in bot}
+        assert bot_syms == {"NEARUSDT"}
+        assert round(self.stats._aggregate_income(bot)["net"], 2) == 359.0   # 374 - 15
+        # AKE (no window) and the pre-entry NEAR row are 'other'.
+        assert {i.symbol for i in other} == {"AKEUSDT", "NEARUSDT"}
+        assert len(other) == 2

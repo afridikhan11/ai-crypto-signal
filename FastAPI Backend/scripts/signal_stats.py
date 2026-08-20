@@ -47,6 +47,11 @@ _FUNDING = "FUNDING_FEE"
 # Binance caps one /fapi/v1/income query to a 7-day window, so a longer
 # history is paged in windows of this size.
 _INCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+# Slack around a bot trade's attribution window: the entry commission is booked
+# ~at entry, and the closing realized-PnL + commission (bot OR manual close) can
+# settle a little after. Generous on the exit side to catch that lag.
+_ENTRY_BUFFER_MS = 2 * 60 * 1000
+_EXIT_BUFFER_MS = 5 * 60 * 1000
 
 # The statuses we tally, in a sensible reading order.
 _ORDER = [
@@ -117,6 +122,66 @@ def _aggregate_income(items) -> dict:
     return {"totals": totals, "per_symbol": per_symbol, "net": net}
 
 
+def _in_bot_window(symbol: str, t: int, windows: dict) -> bool:
+    """True if ledger time `t` falls inside any attribution window the bot held
+    `symbol` (with entry/exit slack). Pure - trivially testable."""
+    for start, end in windows.get(symbol, ()):
+        if start - _ENTRY_BUFFER_MS <= t <= end + _EXIT_BUFFER_MS:
+            return True
+    return False
+
+
+def _split_bot_income(items, windows: dict):
+    """Partition ledger entries into (bot, other). A row is the bot's only if
+    its symbol matches a symbol the bot OPENED a trade on AND its time lands in
+    one of that symbol's attribution windows - so fully-manual trades (symbols
+    the bot never opened, or a bot symbol before its first bot entry) fall into
+    `other`."""
+    bot, other = [], []
+    for it in items:
+        if it.symbol and _in_bot_window(it.symbol.upper(), it.time, windows):
+            bot.append(it)
+        else:
+            other.append(it)
+    return bot, other
+
+
+def _windows_from_entries(entry_rows, now_ms: int) -> dict:
+    """Build per-symbol attribution windows from the bot's entry times. Each
+    window runs from one bot entry to the NEXT bot entry on the same symbol (or
+    'now' for the last).
+
+    Anchored on ENTRIES, deliberately NOT [entry, closed_at]: a position the bot
+    opened may have been closed MANUALLY on the exchange, and that realized PnL
+    is booked AFTER the bot's own closed_at (often a premature CANCELLED
+    reconcile). Attributing by "the bot opened this symbol at time T, until it
+    opened the next one" keeps a manually-closed bot trade counted as the bot's,
+    while a symbol the bot never opened gets no window at all. Pure/testable."""
+    entries: dict[str, list] = {}
+    for symbol, entry_ms in entry_rows:
+        entries.setdefault(symbol.upper(), []).append(entry_ms)
+    windows: dict[str, list] = {}
+    for symbol, ts in entries.items():
+        ts.sort()
+        windows[symbol] = [
+            (ts[i], ts[i + 1] if i + 1 < len(ts) else now_ms) for i in range(len(ts))
+        ]
+    return windows
+
+
+async def _load_bot_windows(session) -> dict:
+    """Entry-anchored attribution windows for every trade the bot placed."""
+    rows = (
+        await session.execute(
+            select(Coin.symbol, Signal.executed_at)
+            .join(Coin, Signal.coin_id == Coin.id)
+            .where(Signal.executed.is_(True), Signal.executed_at.isnot(None))
+        )
+    ).all()
+    entry_rows = [(symbol, int(executed_at.timestamp() * 1000)) for symbol, executed_at in rows]
+    return _windows_from_entries(entry_rows, int(time.time() * 1000))
+
+
 async def _fetch_income_windowed(svc, start_ms: int, end_ms: int) -> list:
     """Page the futures income ledger in <=7-day windows (Binance's cap) and
     return the concatenated entries."""
@@ -182,21 +247,25 @@ async def _print_exchange_truth(session) -> None:
         )
         return
 
-    agg = _aggregate_income(items)
-    t = agg["totals"]
-    print(f"  Realized P/L (gross)    : {t[_REALIZED]:+.4f} USDT")
-    print(f"  Commissions (fees)      : {t[_COMMISSION]:+.4f} USDT")
-    print(f"  Funding                 : {t[_FUNDING]:+.4f} USDT")
-    if t["OTHER"]:
-        print(f"  Other (transfers/bonus) : {t['OTHER']:+.4f} USDT  (not counted in NET)")
-    print(f"  {'-' * 40}")
-    print(f"  NET trading (fees+funding, excl. transfers): {agg['net']:+.4f} USDT")
+    # Attribute the ledger to the BOT's own trades vs everything else (your
+    # manual activity), so the bot's real scorecard is isolated.
+    windows = await _load_bot_windows(session)
+    bot_items, other_items = _split_bot_income(items, windows)
+    bot = _aggregate_income(bot_items)
+    account = _aggregate_income(items)
+    bt = bot["totals"]
 
-    per_symbol = agg["per_symbol"]
-    if per_symbol:
-        print("\n  Per-symbol net (realized + fees + funding):")
+    print("  --- BOT-ONLY (trades the bot opened; a bot trade you closed manually still counts) ---")
+    print(f"  Realized P/L (gross)    : {bt[_REALIZED]:+.4f} USDT")
+    print(f"  Commissions (fees)      : {bt[_COMMISSION]:+.4f} USDT")
+    print(f"  Funding                 : {bt[_FUNDING]:+.4f} USDT")
+    print(f"  {'-' * 40}")
+    print(f"  NET (bot, after fees+funding): {bot['net']:+.4f} USDT")
+
+    if bot["per_symbol"]:
+        print("\n  Per-symbol BOT net (realized + fees + funding):")
         rows = sorted(
-            per_symbol.items(),
+            bot["per_symbol"].items(),
             key=lambda kv: kv[1][_REALIZED] + kv[1][_COMMISSION] + kv[1][_FUNDING],
         )
         for sym, s in rows:
@@ -206,9 +275,17 @@ async def _print_exchange_truth(session) -> None:
                 f"(realized {s[_REALIZED]:+.2f} | fees {s[_COMMISSION]:+.2f} | "
                 f"funding {s[_FUNDING]:+.2f})"
             )
+
+    # Context: the whole account, and what the non-bot (manual) part contributed.
+    manual_net = account["net"] - bot["net"]
+    print(f"\n  Account-wide NET (bot + your manual trades): {account['net']:+.4f} USDT")
+    print(f"  => Manual / non-bot activity              : {manual_net:+.4f} USDT")
     print(
-        "\n  NOTE: this is the real account bottom line; the price-move % above "
-        "excludes fees, funding and fill slippage, so it reads better than this."
+        "\n  NOTE: 'bot-only' attributes income by the symbol+time the BOT opened a\n"
+        "  trade (until its next entry on that symbol), so a bot trade you closed\n"
+        "  manually is still the bot's; fully-manual symbols are excluded. The\n"
+        "  price-move % section above ignores fees/funding/slippage, so it reads\n"
+        "  better than these real numbers."
     )
 
 
