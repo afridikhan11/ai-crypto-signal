@@ -1,0 +1,444 @@
+<!-- ========== Views/SmartAiView.xaml ==========
+     Smart AI module page. Password-gated behind an in-view LOCKED overlay
+     (this app has no modal-Window pattern - everything is a UserControl, so
+     the lock is an overlay, not a dialog window). Binds to /api/v1/smartai/*
+     via SmartAiViewModel + SmartAiApiService. Reuses the existing style keys
+     and converters only - no new styles are introduced. -->
+<UserControl x:Class="AI_Crypto_Signal_Pro.Views.SmartAiView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             Background="{DynamicResource PrimaryBackgroundBrush}"
+             TextElement.Foreground="{DynamicResource PrimaryTextBrush}"
+             TextElement.FontFamily="{DynamicResource MaterialDesignFont}">
+
+    <Grid>
+
+        <!-- ============================================================= -->
+        <!-- AUTHENTICATED CONTENT (hidden while locked)                    -->
+        <!-- ============================================================= -->
+        <Grid Margin="24,20"
+              Visibility="{Binding IsLocked, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Header: title + prominent TESTNET/LIVE badge + actions -->
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="BrainOutline" Width="22" Height="22"
+                                                 Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Smart AI" FontSize="22" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0"
+                               Text="Strategy runners, live signals and the exact rules that fired for each one." />
+                </StackPanel>
+
+                <!-- TESTNET (amber) vs LIVE (red): reuses EnvironmentToBrushConverter -->
+                <Border Grid.Column="1" CornerRadius="6" Padding="14,6" Margin="18,0,0,0" VerticalAlignment="Center"
+                        Background="{Binding EnvironmentBadge, Converter={StaticResource EnvironmentToBrushConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="Radar" Width="16" Height="16" Foreground="Black" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding EnvironmentBadgeText}" FontSize="14" FontWeight="Bold"
+                                   Foreground="Black" Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top">
+                    <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}"
+                                 IsIndeterminate="True" Width="22" Height="22" Margin="0,8,14,0"
+                                 Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <Button Content="Refresh" Style="{StaticResource PrimaryButton}"
+                            Command="{Binding RefreshCommand}" Margin="0,0,10,0" />
+                    <Button Content="Lock" Height="42" Padding="20,0" Background="#616161" BorderThickness="0"
+                            Foreground="White" Cursor="Hand" FontWeight="SemiBold"
+                            Command="{Binding LogoutCommand}" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Error banner -->
+            <Border Grid.Row="1" CornerRadius="8" Background="#33FF5252" Padding="14,10" Margin="0,0,0,14"
+                    Visibility="{Binding ErrorMessage, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="AlertCircleOutline" Width="18" Height="18"
+                                             Foreground="#FF5252" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#FF5252" Margin="10,0,0,0"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Strategy selector (tabs) + per-strategy status panel -->
+            <Border Grid.Row="2" CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}"
+                    Padding="8,8,8,0" Margin="0,0,0,16">
+                <TabControl Background="Transparent" BorderThickness="0"
+                            ItemsSource="{Binding Strategies}"
+                            SelectedItem="{Binding SelectedStrategy, Mode=TwoWay}">
+                    <TabControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="9" Height="9" VerticalAlignment="Center"
+                                         Fill="{Binding RunStatusColor}" />
+                                <TextBlock Text="{Binding DisplayName}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                           FontWeight="SemiBold" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+
+                    <TabControl.ContentTemplate>
+                        <DataTemplate>
+                            <!-- DataContext here is the selected SmartAiStrategyVm. -->
+                            <Grid Margin="12,16,12,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Read-only status / config panel -->
+                                <StackPanel Grid.Column="0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" />
+                                        <Border CornerRadius="4" Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                Background="{DynamicResource ElevatedBackgroundBrush}">
+                                            <TextBlock Text="{Binding EnabledLabel}" FontSize="11" FontWeight="Bold"
+                                                       Foreground="{Binding EnabledColor}" />
+                                        </Border>
+                                        <Border CornerRadius="4" Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                Background="{DynamicResource ElevatedBackgroundBrush}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{Binding RunStatusColor}" />
+                                                <TextBlock Text="{Binding RunStatusLabel}" FontSize="11" FontWeight="Bold"
+                                                           Foreground="{Binding RunStatusColor}" Margin="6,0,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <UniformGrid Columns="4">
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="Evaluations" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding Evaluations}" FontSize="18" FontWeight="Bold" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="Signals" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding SignalCount}" FontSize="18" FontWeight="Bold" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="Restarts" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding Restarts}" FontSize="18" FontWeight="Bold" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="Strategy ID" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding StrategyId}" FontSize="13" Margin="0,7,0,0"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </UniformGrid>
+
+                                    <!-- last_error surfaced only when present -->
+                                    <Border CornerRadius="6" Background="#33FF5252" Padding="10,8" Margin="0,12,0,0"
+                                            Visibility="{Binding HasLastError, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <materialDesign:PackIcon Kind="AlertOctagonOutline" Width="16" Height="16"
+                                                                     Foreground="#FF5252" VerticalAlignment="Top" />
+                                            <TextBlock Margin="10,0,0,0" TextWrapping="Wrap" Foreground="#FF8A80">
+                                                <Run Text="Last error: " FontWeight="SemiBold" /><Run Text="{Binding LastError, Mode=OneWay}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- Enable / disable switch -->
+                                <Button Grid.Column="1" VerticalAlignment="Top" Height="40" MinWidth="150" Padding="18,0"
+                                        BorderThickness="0" Cursor="Hand" Foreground="White" FontWeight="SemiBold"
+                                        Background="{Binding EnabledColor}"
+                                        Command="{Binding DataContext.ToggleStrategyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        IsEnabled="{Binding DataContext.IsTogglingStrategy, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBooleanConverter}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="PowerPlug" Width="16" Height="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding ToggleButtonLabel}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </TabControl.ContentTemplate>
+                </TabControl>
+            </Border>
+
+            <!-- Signals + Performance -->
+            <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+
+                    <!-- ===== Signals table (rules_fired = the expandable row detail) ===== -->
+                    <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <materialDesign:PackIcon Kind="FormatListChecks" Width="18" Height="18"
+                                                         Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="Signals" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Select a row to expand the rules that fired for that signal."
+                                           FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Margin="12,2,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <!-- Empty state -->
+                            <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="24" Margin="0,10,0,0"
+                                    Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <materialDesign:PackIcon Kind="InboxOutline" Width="34" Height="34"
+                                                             Foreground="{DynamicResource SecondaryTextBrush}" HorizontalAlignment="Center" />
+                                    <TextBlock Text="No signals for this strategy yet." Margin="0,10,0,0"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <DataGrid ItemsSource="{Binding Signals}"
+                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                      BorderThickness="0" Background="Transparent" RowHeight="44"
+                                      HeadersVisibility="Column"
+                                      SelectionMode="Single"
+                                      RowDetailsVisibilityMode="VisibleWhenSelected"
+                                      Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time" Binding="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" Width="1.4*" />
+                                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" />
+                                    <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="*" />
+                                    <DataGridTextColumn Header="Entry" Binding="{Binding EntryPrice}" Width="*" />
+                                    <DataGridTextColumn Header="Stop" Binding="{Binding StopLoss}" Width="*" />
+                                    <DataGridTextColumn Header="Target" Binding="{Binding TakeProfit}" Width="*" />
+                                    <DataGridTextColumn Header="R:R" Binding="{Binding RiskReward, StringFormat=N2}" Width="0.8*" />
+                                    <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="*" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                                </DataGrid.Columns>
+
+                                <!-- ===== The most important part: which rules fired ===== -->
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource ElevatedBackgroundBrush}" CornerRadius="8"
+                                                Padding="16" Margin="0,4,0,10">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                    <materialDesign:PackIcon Kind="Gavel" Width="16" Height="16"
+                                                                             Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="Rules fired" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}" FontSize="11">
+                                                        <Run Text="{Binding Symbol, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Direction, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+
+                                                <!-- Non-null rules_fired -->
+                                                <ItemsControl ItemsSource="{Binding RulesFired}"
+                                                              Visibility="{Binding RulesFired, Converter={StaticResource NullToVisibilityConverter}}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="6"
+                                                                    Padding="10,7" Margin="0,0,0,6">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="220" />
+                                                                        <ColumnDefinition Width="*" />
+                                                                    </Grid.ColumnDefinitions>
+
+                                                                    <Border Grid.Column="0" Width="10" Height="10" CornerRadius="5"
+                                                                            VerticalAlignment="Center">
+                                                                        <Border.Style>
+                                                                            <Style TargetType="Border">
+                                                                                <Setter Property="Background" Value="#FF5252" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Passed}" Value="True">
+                                                                                        <Setter Property="Background" Value="#00E676" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </Border.Style>
+                                                                    </Border>
+
+                                                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="Bold"
+                                                                               Margin="10,0,0,0" MinWidth="42">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Text" Value="FAIL" />
+                                                                                <Setter Property="Foreground" Value="#FF5252" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding Passed}" Value="True">
+                                                                                        <Setter Property="Text" Value="PASS" />
+                                                                                        <Setter Property="Foreground" Value="#00E676" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+
+                                                                    <TextBlock Grid.Column="2" Text="{Binding Name}" VerticalAlignment="Center"
+                                                                               FontWeight="SemiBold" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Grid.Column="3" Text="{Binding Detail}" VerticalAlignment="Center"
+                                                                               Margin="12,0,0,0" TextWrapping="Wrap"
+                                                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <!-- Null rules_fired -->
+                                                <TextBlock Text="No rule breakdown was recorded for this signal."
+                                                           Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12"
+                                                           Visibility="{Binding RulesFired, Converter={StaticResource NullToVisibilityConverter}, ConverterParameter=Invert}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== Performance + hand-drawn equity curve ===== -->
+                    <Border CornerRadius="10" Background="{DynamicResource CardBackgroundBrush}" Padding="20" Margin="0,0,0,16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                <materialDesign:PackIcon Kind="ChartLine" Width="18" Height="18"
+                                                         Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="Performance" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Metric cards -->
+                                <UniformGrid Grid.Column="0" Columns="2" VerticalAlignment="Top">
+                                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="14" Margin="0,0,10,10" MinWidth="120">
+                                        <StackPanel>
+                                            <TextBlock Text="Total Trades" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding Performance.TotalTrades}" FontSize="20" FontWeight="Bold" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="14" Margin="0,0,0,10" MinWidth="120">
+                                        <StackPanel>
+                                            <TextBlock Text="Win Rate" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding Performance.WinRate, StringFormat=P0}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="{DynamicResource AccentBrush}" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="14" Margin="0,0,10,0" MinWidth="120">
+                                        <StackPanel>
+                                            <TextBlock Text="Wins" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding Performance.Wins}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="#00E676" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="14" MinWidth="120">
+                                        <StackPanel>
+                                            <TextBlock Text="Losses" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                            <TextBlock Text="{Binding Performance.Losses}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="#FF5252" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </UniformGrid>
+
+                                <!-- Equity curve: hand-drawn Polyline over a Canvas (no charting lib) -->
+                                <Border Grid.Column="1" CornerRadius="8" Background="{DynamicResource ElevatedBackgroundBrush}"
+                                        Padding="16" Margin="16,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Equity Curve" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding EquityCurveCaption}" FontSize="11"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,2,0,8" />
+
+                                        <Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="6" Padding="0">
+                                            <!-- Canvas dimensions MUST match ChartWidth/ChartHeight in SmartAiViewModel
+                                                 (560 x 150) - the Polyline points are pre-scaled to these pixels. -->
+                                            <Canvas Width="560" Height="150" ClipToBounds="True">
+                                                <!-- Zero baseline -->
+                                                <Line X1="0" X2="560"
+                                                      Y1="{Binding EquityBaselineY}" Y2="{Binding EquityBaselineY}"
+                                                      Stroke="{DynamicResource BorderBrush}" StrokeThickness="1"
+                                                      StrokeDashArray="4 3" />
+                                                <Polyline Points="{Binding EquityCurvePoints}"
+                                                          Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                                          StrokeLineJoin="Round"
+                                                          Visibility="{Binding HasEquityCurve, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            </Canvas>
+                                        </Border>
+
+                                        <TextBlock Text="Cumulative +1 win / -1 loss over closed signals; dashed line is break-even."
+                                                   FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- Backend note, shown verbatim when present -->
+                            <Border CornerRadius="6" Background="{DynamicResource ElevatedBackgroundBrush}" Padding="12,10" Margin="0,14,0,0"
+                                    Visibility="{Binding Performance.Note, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="InformationOutline" Width="16" Height="16"
+                                                             Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Top" />
+                                    <TextBlock Text="{Binding Performance.Note}" Margin="10,0,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ============================================================= -->
+        <!-- LOCKED OVERLAY (login) - covers the page until authenticated   -->
+        <!-- ============================================================= -->
+        <Grid Background="{DynamicResource PrimaryBackgroundBrush}"
+              Visibility="{Binding IsLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border CornerRadius="14" Background="{DynamicResource CardBackgroundBrush}"
+                    BorderBrush="{DynamicResource GlassBorderBrush}" BorderThickness="1"
+                    Padding="34" Width="420" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel>
+                    <materialDesign:PackIcon Kind="LockOutline" Width="40" Height="40"
+                                             Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" />
+                    <TextBlock Text="Smart AI is locked" FontSize="18" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" Margin="0,12,0,0" />
+                    <TextBlock Text="Enter the Smart AI password to unlock strategy control and live signals."
+                               FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}"
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,6,0,0" />
+
+                    <TextBlock Text="Password" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,20,0,4" />
+                    <PasswordBox x:Name="LoginPasswordBox"
+                                 materialDesign:HintAssist.Hint="Smart AI password"
+                                 Style="{StaticResource MaterialDesignFloatingHintPasswordBox}"
+                                 KeyDown="LoginPasswordBox_KeyDown" />
+
+                    <TextBlock Text="Session is held in memory only - you'll sign in again after restarting the app."
+                               FontSize="10" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,10,0,0" />
+
+                    <Button Content="Sign In" Style="{StaticResource PrimaryButton}" Margin="0,18,0,0"
+                            Command="{Binding LoginCommand}"
+                            CommandParameter="{Binding ElementName=LoginPasswordBox}"
+                            IsEnabled="{Binding IsAuthenticating, Converter={StaticResource InverseBooleanConverter}}" />
+
+                    <ProgressBar Style="{StaticResource MaterialDesignCircularProgressBar}"
+                                 IsIndeterminate="True" Width="22" Height="22" Margin="0,14,0,0"
+                                 Visibility="{Binding IsAuthenticating, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                    <TextBlock Text="{Binding LoginError}" Foreground="#FF5252" FontSize="12"
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
+                               Visibility="{Binding LoginError, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+    </Grid>
+</UserControl>

@@ -243,6 +243,14 @@
                                 </ListBoxItem>
                                 <ListBoxItem Height="44" Padding="20,0">
                                     <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="Brain" Width="18" Height="18"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        <TextBlock Text="Smart AI" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   FontSize="13" VerticalAlignment="Center" Margin="14,0,0,0" />
+                                    </StackPanel>
+                                </ListBoxItem>
+                                <ListBoxItem Height="44" Padding="20,0">
+                                    <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon Kind="CogOutline" Width="18" Height="18"
                                                                  Foreground="{DynamicResource SecondaryTextBrush}" />
                                         <TextBlock Text="Settings" Foreground="{DynamicResource SecondaryTextBrush}"
