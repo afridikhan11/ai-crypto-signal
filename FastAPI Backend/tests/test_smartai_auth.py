@@ -19,6 +19,11 @@ PROTECTED = [
     "/api/v1/smartai/strategies",
     "/api/v1/smartai/signals?strategy_id=ict_levels",
     "/api/v1/smartai/performance?strategy_id=ict_levels",
+    "/api/v1/smartai/runner/status",
+]
+PROTECTED_POST = [
+    "/api/v1/smartai/strategies/ict_levels/enable",
+    "/api/v1/smartai/strategies/ict_levels/disable",
 ]
 
 
@@ -187,3 +192,51 @@ class TestHttp:
             "/api/v1/smartai/auth/refresh", json={"refresh_token": tokens["access_token"]}
         )
         assert bad.status_code == 401
+
+
+class _FakeRunner:
+    def __init__(self):
+        self.calls = []
+
+    def status(self):
+        class _S:
+            def to_dict(self):
+                return {"strategy_id": "ict_levels", "enabled": True, "running": True}
+        return [_S()]
+
+    def set_enabled(self, strategy_id, enabled):
+        if strategy_id == "nope":
+            raise KeyError(strategy_id)
+        self.calls.append((strategy_id, enabled))
+
+
+class TestRunnerControl:
+    def _auth(self, client, owner_hash_set):
+        token = client.post("/api/v1/smartai/auth/login", json={"password": PASSWORD}).json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_post_control_routes_401_without_token(self, client):
+        for path in PROTECTED_POST:
+            assert client.post(path).status_code == 401, path
+
+    def test_runner_status_graceful_without_runner(self, client, owner_hash_set):
+        h = self._auth(client, owner_hash_set)
+        resp = client.get("/api/v1/smartai/runner/status", headers=h)
+        assert resp.status_code == 200 and resp.json()["running"] is False
+
+    def test_enable_without_runner_503(self, client, owner_hash_set):
+        h = self._auth(client, owner_hash_set)
+        assert client.post("/api/v1/smartai/strategies/ict_levels/enable", headers=h).status_code == 503
+
+    def test_enable_with_runner_toggles(self, client, owner_hash_set):
+        h = self._auth(client, owner_hash_set)
+        fake = _FakeRunner()
+        client.app.state.smart_ai_runner = fake
+        resp = client.post("/api/v1/smartai/strategies/ict_levels/disable", headers=h)
+        assert resp.status_code == 200 and resp.json() == {"strategy_id": "ict_levels", "enabled": False}
+        assert fake.calls == [("ict_levels", False)]
+
+    def test_enable_unknown_strategy_404(self, client, owner_hash_set):
+        h = self._auth(client, owner_hash_set)
+        client.app.state.smart_ai_runner = _FakeRunner()
+        assert client.post("/api/v1/smartai/strategies/nope/enable", headers=h).status_code == 404

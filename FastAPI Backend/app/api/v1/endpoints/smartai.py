@@ -187,6 +187,44 @@ async def list_signals(
     ]
 
 
+def _runner(request: Request):
+    """The live SmartAiRunner, or None when the module is not running (disabled
+    or not yet started). Endpoints degrade to a clear state instead of 500ing."""
+    return getattr(request.app.state, "smart_ai_runner", None)
+
+
+@router.get("/runner/status")
+async def runner_status(request: Request) -> dict:
+    runner = _runner(request)
+    if runner is None:
+        return {"running": False, "strategies": []}
+    return {"running": True, "strategies": [s.to_dict() for s in runner.status()]}
+
+
+@router.post("/strategies/{strategy_id}/enable")
+async def enable_strategy(strategy_id: str, request: Request) -> dict:
+    return _set_enabled(request, strategy_id, True)
+
+
+@router.post("/strategies/{strategy_id}/disable")
+async def disable_strategy(strategy_id: str, request: Request) -> dict:
+    return _set_enabled(request, strategy_id, False)
+
+
+def _set_enabled(request: Request, strategy_id: str, enabled: bool) -> dict:
+    runner = _runner(request)
+    if runner is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Smart AI runner is not active (module disabled). Set SMARTAI_ENABLED=true.",
+        )
+    try:
+        runner.set_enabled(strategy_id, enabled)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown strategy '{strategy_id}'")
+    return {"strategy_id": strategy_id, "enabled": enabled}
+
+
 @router.get("/performance", response_model=StrategyPerformance)
 async def performance(strategy_id: str, db: AsyncSession = Depends(get_db)) -> StrategyPerformance:
     """Thin live tally per strategy. The FULL metrics (profit factor, max
