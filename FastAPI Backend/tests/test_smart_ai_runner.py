@@ -175,3 +175,27 @@ class TestRunner:
         runner = _runner([_Strat("known")], sink)
         with pytest.raises(KeyError):
             runner.set_enabled("nope", True)
+
+
+class TestStartupMapping:
+    def test_signal_to_model_kwargs(self):
+        from datetime import datetime, timezone
+
+        from app.models.signal import SignalStatus
+        from app.strategy.base_strategy import ConditionResult
+        from app.strategy.smart_ai_startup import signal_to_model_kwargs
+
+        sig = StrategySignal(
+            strategy_id="ict_levels", symbol="BTCUSDT", direction=Direction.SHORT,
+            entry_price=100.0, stop_loss=102.0, take_profit=94.0, risk_reward=3.0, confidence=75,
+            conditions=[ConditionResult("htf_bias", True, "4h bearish")], reason="test setup",
+        )
+        now = datetime.now(timezone.utc)
+        kw = signal_to_model_kwargs(sig, coin_id="cid", now=now)
+        assert kw["strategy_id"] == "ict_levels"
+        assert kw["direction"] is Direction.SHORT
+        assert kw["entry_price"] == 100.0
+        assert kw["stop_loss"] == kw["initial_stop_loss"] == 102.0   # both start equal
+        assert kw["status"] is SignalStatus.ACTIVE
+        assert kw["actual_fill_price"] == 100.0 and kw["filled_at"] == now
+        assert kw["rules_fired"] == [{"name": "htf_bias", "passed": True, "detail": "4h bearish"}]

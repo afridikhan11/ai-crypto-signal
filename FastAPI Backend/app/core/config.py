@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     # (task: both strategies default to disabled + testnet on first run).
     smartai_enabled: bool = Field(default=False, alias="SMARTAI_ENABLED")
     smartai_testnet: bool = Field(default=True, alias="SMARTAI_TESTNET")
+    smartai_poll_interval: float = Field(default=60.0, alias="SMARTAI_POLL_INTERVAL")
     strategy_ict_levels_enabled: bool = Field(
         default=False, alias="STRATEGY_ICT_LEVELS_ENABLED"
     )
