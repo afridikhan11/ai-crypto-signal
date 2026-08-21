@@ -16,7 +16,11 @@ All three are exercised here as pure logic - no DB, no network.
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import get_settings
-from app.scheduler.universal_scanner import direction_cap_reached, reentry_blocked
+from app.scheduler.universal_scanner import (
+    direction_cap_reached,
+    entry_too_far,
+    reentry_blocked,
+)
 from app.strategy.entry_validation_engine import EntryValidationEngine
 
 
@@ -63,7 +67,29 @@ class TestDirectionCap:
 
 
 # ======================================================================
-# 3. Counter-trend exception mirrored in EntryValidationEngine
+# 3. Pending-entry distance gate (fill rate)
+# ======================================================================
+class TestEntryDistanceGate:
+    def test_far_entry_is_filtered(self):
+        # Entry 3% below the live price on a pending LONG retracement.
+        assert entry_too_far(entry=97.0, market_price=100.0, max_distance_pct=2.0) is True
+
+    def test_near_entry_is_kept(self):
+        assert entry_too_far(entry=98.5, market_price=100.0, max_distance_pct=2.0) is False
+
+    def test_exact_boundary_is_kept(self):
+        assert entry_too_far(entry=98.0, market_price=100.0, max_distance_pct=2.0) is False
+
+    def test_zero_disables(self):
+        assert entry_too_far(entry=50.0, market_price=100.0, max_distance_pct=0.0) is False
+
+    def test_unknown_market_price_never_blocks(self):
+        assert entry_too_far(entry=97.0, market_price=None, max_distance_pct=2.0) is False
+        assert entry_too_far(entry=97.0, market_price=0.0, max_distance_pct=2.0) is False
+
+
+# ======================================================================
+# 4. Counter-trend exception mirrored in EntryValidationEngine
 # ======================================================================
 class _Bias:
     def __init__(self, direction):
@@ -116,3 +142,4 @@ class TestConfigDefaults:
         # Above every confidence the pipeline produced in its first 136
         # signals (68-79): the bar admits only exceptional counter-trend setups.
         assert s.counter_trend_min_confidence == 80
+        assert s.max_pending_entry_distance_pct == 2.0

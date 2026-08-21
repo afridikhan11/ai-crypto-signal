@@ -127,6 +127,19 @@ def reentry_blocked(last_closed_at, now, cooldown_minutes: int) -> bool:
     return (now - last_closed_at) < timedelta(minutes=cooldown_minutes)
 
 
+def entry_too_far(entry: float, market_price, max_distance_pct: float) -> bool:
+    """FILL-RATE GATE (pure): True when a pending entry sits further than
+    `max_distance_pct` percent from the live price. ~52% of the first 136
+    signals expired unfilled; because a symbol holds at most ONE live signal, a
+    far-away pending squats on that slot for the whole 12h expiry window and
+    blocks nearer setups that would actually fill. This only FILTERS a signal -
+    it never moves an entry price (the PR #21 regression lesson). 0 disables;
+    an unknown market price never blocks."""
+    if max_distance_pct <= 0 or not market_price:
+        return False
+    return abs(entry - market_price) / market_price * 100.0 > max_distance_pct
+
+
 def direction_cap_reached(live_same_direction: int, cap: int) -> bool:
     """DIRECTIONAL-CONCENTRATION GATE (pure): True when the book already holds
     `cap` live signals in the proposed direction. 32 of the bot's first 33
@@ -592,6 +605,22 @@ class UniversalScanner:
                     logger.info(
                         f"{data['symbol']}: {live_same} live {data['direction']} signals "
                         f">= cap {cap} - not stacking further into one side; signal skipped."
+                    )
+                    diagnostics.record_database_save(data["symbol"], saved=False, duplicate=False)
+                    return
+
+            # FILL-RATE GATE - see entry_too_far()'s docstring. Pending-mode
+            # only: a market-mode signal enters at the live price, so distance
+            # is meaningless for it.
+            max_dist = settings.max_pending_entry_distance_pct
+            if max_dist > 0 and is_ict_pending_entry():
+                market_price = data.get("market_price_at_signal")
+                if entry_too_far(data["entry"], market_price, max_dist):
+                    distance_pct = abs(data["entry"] - market_price) / market_price * 100.0
+                    logger.info(
+                        f"{data['symbol']}: pending entry {distance_pct:.2f}% from live price "
+                        f"(> {max_dist}%) - unlikely to fill inside the expiry window; "
+                        f"signal skipped so the symbol's slot stays free for a nearer setup."
                     )
                     diagnostics.record_database_save(data["symbol"], saved=False, duplicate=False)
                     return

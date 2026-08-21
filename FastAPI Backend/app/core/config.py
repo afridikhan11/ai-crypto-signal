@@ -90,6 +90,17 @@ class Settings(BaseSettings):
     counter_trend_min_confidence: int = Field(
         default=80, alias="COUNTER_TREND_MIN_CONFIDENCE"
     )
+    # FILL-RATE GATE: 71 of the first 136 signals (~52%) EXPIRED because price
+    # never returned to the ICT entry zone. A symbol holds at most ONE live
+    # signal, so a far-away pending entry squats on that slot for the whole
+    # 12h expiry window and blocks nearer setups that would actually fill.
+    # Skip creating a PENDING signal whose entry is further than this % from
+    # the live price (market-mode signals enter at the live price and are
+    # unaffected). Entry PRICING is untouched - this only filters, it never
+    # moves an entry (the PR #21 regression lesson). 0 disables.
+    max_pending_entry_distance_pct: float = Field(
+        default=2.0, alias="MAX_PENDING_ENTRY_DISTANCE_PCT"
+    )
 
     # ---- Smart AI module (app/strategy/base_strategy.py + strategies) ----
     # Master switch for the whole module and each strategy within it. Every
