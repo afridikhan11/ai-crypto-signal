@@ -101,7 +101,15 @@ class EntryValidationEngine:
         session_context: Optional[object] = None,
         risk_reward: Optional[float] = None,
         invalidation_level: Optional[float] = None,
+        counter_trend_exception: bool = False,
     ) -> EntryValidationResult:
+        """`counter_trend_exception` (2026-08-21): when True, an OPPOSING
+        institutional bias / HTF structure no longer fails its check - the
+        caller has already decided this specific counter-trend setup clears the
+        configured confidence bar (see Settings.htf_opposition_mode), and this
+        engine must not silently re-block what that policy admitted. The check
+        detail records the exception honestly. Default False, so every other
+        caller (and the backtester) is unchanged."""
         checks: List[ValidationCheck] = []
 
         # institutional_bias
@@ -111,6 +119,12 @@ class EntryValidationEngine:
             wanted = "bullish" if direction == "LONG" else "bearish"
             if institutional_bias.direction == wanted:
                 checks.append(ValidationCheck("institutional_bias", True, f"Institutional bias aligned ({institutional_bias.direction})."))
+            elif counter_trend_exception:
+                checks.append(ValidationCheck(
+                    "institutional_bias", True,
+                    f"Institutional bias opposes trade ({institutional_bias.direction}) but the "
+                    f"counter-trend confidence exception applies.",
+                ))
             else:
                 checks.append(ValidationCheck("institutional_bias", False, f"Institutional bias opposes trade ({institutional_bias.direction})."))
 
@@ -124,8 +138,14 @@ class EntryValidationEngine:
             if heaviest is not None:
                 ts = htf_snapshot.get(heaviest)
                 if ts.structure_alignment == opposing_alignment:
-                    htf_fail = True
-                    htf_detail = f"{heaviest.upper()} structure opposes trade ({ts.structure_alignment})."
+                    if counter_trend_exception:
+                        htf_detail = (
+                            f"{heaviest.upper()} structure opposes trade ({ts.structure_alignment}) "
+                            f"but the counter-trend confidence exception applies."
+                        )
+                    else:
+                        htf_fail = True
+                        htf_detail = f"{heaviest.upper()} structure opposes trade ({ts.structure_alignment})."
                 else:
                     htf_detail = f"{heaviest.upper()} structure does not oppose trade ({ts.structure_alignment})."
         checks.append(ValidationCheck("htf_alignment", not htf_fail, htf_detail))

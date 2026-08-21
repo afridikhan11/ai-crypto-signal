@@ -69,6 +69,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from loguru import logger
 
+from app.core.config import get_settings
 from app.smc.market_structure_engine import MarketStructureEngine
 from app.smc.liquidity_engine import LiquidityEngine, LiquidityType
 from app.smc.order_block_engine import OrderBlockEngine
@@ -807,8 +808,26 @@ class SignalGenerator:
         # alignment from the same structure snapshot; this gate exists as
         # the explicit, separately-reportable "do not fight the higher
         # timeframe" rule so a rejection names it directly.
+        # 2026-08-21: this gate is no longer an unconditional hard-block.
+        # 32 of the bot's first 33 executed trades were with-trend shorts;
+        # every bullish setup died here, leaving the whole book one-sided.
+        # Under HTF_OPPOSITION_MODE="confidence_bar" a counter-trend setup is
+        # admitted ONLY when confidence clears COUNTER_TREND_MIN_CONFIDENCE
+        # (default 80 - above anything the pipeline has produced live), so
+        # hedges are never forced into existence, merely no longer impossible.
+        # "block" restores the old behavior.
+        _gate_settings = get_settings()
         wanted_bias = "bullish" if direction == Direction.LONG else "bearish"
-        if institutional_bias.direction in ("bullish", "bearish") and institutional_bias.direction != wanted_bias:
+        is_counter_trend = (
+            institutional_bias.direction in ("bullish", "bearish")
+            and institutional_bias.direction != wanted_bias
+        )
+        counter_trend_exception = (
+            is_counter_trend
+            and _gate_settings.htf_opposition_mode == "confidence_bar"
+            and confidence >= _gate_settings.counter_trend_min_confidence
+        )
+        if is_counter_trend and not counter_trend_exception:
             blocking.append(BlockingReason(
                 gate=RejectionGate.HTF_OPPOSITION,
                 detail=(
@@ -817,6 +836,12 @@ class SignalGenerator:
                     f"structure."
                 ),
             ))
+        elif counter_trend_exception:
+            logger.info(
+                f"{self.symbol}: counter-trend {direction.value} ADMITTED - confidence "
+                f"{confidence} >= {_gate_settings.counter_trend_min_confidence} bar "
+                f"(HTF bias {institutional_bias.direction})."
+            )
 
         # ------------------------------------------------------------------
         # Asset-Profile filters. These make the SAME shared pipeline
@@ -868,6 +893,10 @@ class SignalGenerator:
             session_context=session_ctx,
             risk_reward=rr,
             invalidation_level=stop_loss,
+            # Keep the two HTF-opposition readers consistent: what the
+            # confidence-bar policy above admitted, this engine must not
+            # silently re-block (and vice versa - default False).
+            counter_trend_exception=counter_trend_exception,
         )
         if not entry_validation.valid:
             failed = entry_validation.failed_checks

@@ -56,6 +56,41 @@ class Settings(BaseSettings):
     # are testnet, so it can never place a mainnet order.
     auto_execute_testnet: bool = Field(default=False, alias="AUTO_EXECUTE_TESTNET")
 
+    # ---- Trade-frequency & directional risk controls (2026-08-21) ----
+    # Measured on testnet: fees consumed 72% of the bot's gross P/L (+226 gross,
+    # -164 fees), driven by rapid re-entries on the same symbol (XRP shorted 6x
+    # into a rally, AVAX repeatedly) and CANCELLED-then-reenter churn. These
+    # gates cut that churn at the SIGNAL-CREATION layer, before any order or
+    # fee exists. Each is independently tunable/disable-able via env.
+    #
+    # After a coin's trade CLOSES with a real outcome (TP_HIT / STOPPED /
+    # CANCELLED - i.e. a position actually existed and paid fees), block a new
+    # signal on that SAME coin for this many minutes. EXPIRED signals never
+    # entered, cost nothing, and impose no cooldown. 0 disables.
+    signal_reentry_cooldown_minutes: int = Field(
+        default=60, alias="SIGNAL_REENTRY_COOLDOWN_MINUTES"
+    )
+    # Maximum live (pending or open) signals in the SAME direction across the
+    # whole book at once. All 32 of the bot's 33 executed trades were shorts -
+    # a single adverse reversal hits every position together. 0 disables.
+    max_concurrent_same_direction: int = Field(
+        default=3, alias="MAX_CONCURRENT_SAME_DIRECTION"
+    )
+    # How the HTF_OPPOSITION gate treats a counter-trend setup:
+    #   "block"          - reject outright (the pre-2026-08-21 behavior).
+    #   "confidence_bar" - allow it ONLY when confidence clears
+    #                      counter_trend_min_confidence. The bar (80) sits
+    #                      above every confidence the pipeline produced in the
+    #                      first 136 live signals (68-79), so by default this
+    #                      admits only genuinely exceptional counter-trend
+    #                      setups instead of forcing hedges into existence.
+    htf_opposition_mode: str = Field(
+        default="confidence_bar", alias="HTF_OPPOSITION_MODE"
+    )
+    counter_trend_min_confidence: int = Field(
+        default=80, alias="COUNTER_TREND_MIN_CONFIDENCE"
+    )
+
     # ---- Smart AI module (app/strategy/base_strategy.py + strategies) ----
     # Master switch for the whole module and each strategy within it. Every
     # flag defaults OFF and the module defaults to TESTNET, so a fresh install

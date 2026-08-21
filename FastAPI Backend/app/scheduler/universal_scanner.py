@@ -73,7 +73,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.ai.calibration_profiles import TESTNET_MIN_CONFIDENCE
 from app.assets.asset_profile import AssetProfile, get_asset_profile
@@ -87,7 +87,9 @@ from app.core.database import AsyncSessionLocal
 from app.core.redis import redis_client
 from app.diagnostics.signal_pipeline_diagnostics import diagnostics
 from app.models.coin import Coin
+from app.core.config import get_settings
 from app.models.signal import (
+    DECIDED_STATUSES,
     NON_TERMINAL_STATUSES,
     Direction,
     Signal,
@@ -111,6 +113,28 @@ PRIMARY_CANDLES = 500
 # match the engine's own top-down weighting.
 HTF_TIMEFRAMES = ("1w", "1d", "4h", "1h")
 HTF_CANDLES = 100
+
+
+def reentry_blocked(last_closed_at, now, cooldown_minutes: int) -> bool:
+    """FEE-CHURN GATE (pure): True when the coin's last DECIDED trade closed
+    less than `cooldown_minutes` ago, so a fresh signal on the same coin must
+    wait. Measured on testnet, fees consumed 72% of gross P/L, largely from
+    closing and immediately re-entering the same symbol (XRP was shorted six
+    times into one rally). EXPIRED signals never entered and never pay fees, so
+    they are excluded by the caller (DECIDED_STATUSES only). 0 disables."""
+    if cooldown_minutes <= 0 or last_closed_at is None:
+        return False
+    return (now - last_closed_at) < timedelta(minutes=cooldown_minutes)
+
+
+def direction_cap_reached(live_same_direction: int, cap: int) -> bool:
+    """DIRECTIONAL-CONCENTRATION GATE (pure): True when the book already holds
+    `cap` live signals in the proposed direction. 32 of the bot's first 33
+    executed trades were shorts - one adverse reversal hits every position at
+    once. The cap does not force counter-trend trades into existence; it only
+    stops the book from stacking further into an already-crowded side. 0
+    disables."""
+    return cap > 0 and live_same_direction >= cap
 
 
 class UniversalScanner:
@@ -527,6 +551,50 @@ class UniversalScanner:
                 logger.info(f"{data['symbol']}: A pending or active signal already exists.")
                 diagnostics.record_database_save(data["symbol"], saved=False, duplicate=True)
                 return
+
+            settings = get_settings()
+
+            # FEE-CHURN GATE - see reentry_blocked()'s docstring. Only DECIDED
+            # outcomes (a position really existed and paid fees) start the
+            # cooldown; EXPIRED never entered and imposes none.
+            cooldown = settings.signal_reentry_cooldown_minutes
+            if cooldown > 0:
+                last_closed = (
+                    await session.execute(
+                        select(func.max(Signal.closed_at)).where(
+                            Signal.coin_id == coin.id,
+                            Signal.status.in_(DECIDED_STATUSES),
+                        )
+                    )
+                ).scalar()
+                if reentry_blocked(last_closed, datetime.now(timezone.utc), cooldown):
+                    logger.info(
+                        f"{data['symbol']}: re-entry cooldown active "
+                        f"(last trade closed {last_closed}, cooldown {cooldown}m) - signal skipped."
+                    )
+                    diagnostics.record_database_save(data["symbol"], saved=False, duplicate=False)
+                    return
+
+            # DIRECTIONAL-CONCENTRATION GATE - see direction_cap_reached()'s
+            # docstring. Counts every live (pending or open) signal in the
+            # proposed direction across the whole book.
+            cap = settings.max_concurrent_same_direction
+            if cap > 0:
+                live_same = (
+                    await session.execute(
+                        select(func.count(Signal.id)).where(
+                            Signal.status.in_(NON_TERMINAL_STATUSES),
+                            Signal.direction == Direction[data["direction"]],
+                        )
+                    )
+                ).scalar_one()
+                if direction_cap_reached(live_same, cap):
+                    logger.info(
+                        f"{data['symbol']}: {live_same} live {data['direction']} signals "
+                        f">= cap {cap} - not stacking further into one side; signal skipped."
+                    )
+                    diagnostics.record_database_save(data["symbol"], saved=False, duplicate=False)
+                    return
 
             # ICT Pending Limit Entry (2026-07-30): under entry_mode
             # "ict_pending" a signal is BORN pending - the ICT entry zone
