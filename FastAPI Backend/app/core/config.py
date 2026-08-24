@@ -118,6 +118,18 @@ class Settings(BaseSettings):
     # new placements until one closes: yesterday's open trades consume
     # today's allowance. 0 disables.
     max_open_positions: int = Field(default=3, alias="MAX_OPEN_POSITIONS")
+    # PER-POSITION NOTIONAL CAP (2026-08-25): risk-based sizing with a tight
+    # structural stop produces a huge position (FIL ran ~2x equity on a ~0.5%
+    # stop), and on tight stops EXECUTION cost becomes the real risk - the
+    # software stop fills late and the "1%" loss lands bigger (COTI: -0.77%
+    # price move booked as -1.4% of equity). Cap any single position's
+    # notional to this % of equity: wide-stop trades size normally at full
+    # 1% risk; tight-stop trades get capped smaller (risking LESS than 1%),
+    # so the slippage overshoot is bounded. Institutional desks run exactly
+    # this pairing (fixed-fractional risk + per-position gross cap). 0 disables.
+    max_position_notional_pct: float = Field(
+        default=50.0, alias="MAX_POSITION_NOTIONAL_PCT"
+    )
 
     # ---- Smart AI module (app/strategy/base_strategy.py + strategies) ----
     # Master switch for the whole module and each strategy within it. Every

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from app.core.config import get_settings
 from app.models.signal import Signal
 from app.risk.risk_engine import RiskAssessment, RiskEngine
 from app.risk.context_builder import build_risk_context, candidate_from_position_size
@@ -86,6 +87,41 @@ def _leverage_headroom_notional(futures_account, risk_context) -> Optional[float
     max_lev = _risk_engine.limits.max_leverage_percent / 100.0
     headroom = _LEVERAGE_HEADROOM_SAFETY * max_lev * float(equity) - existing_notional
     return max(0.0, headroom)
+
+
+def per_position_notional_cap(equity, cap_pct: float) -> Optional[float]:
+    """PER-POSITION GROSS CAP (pure): the dollar notional one position may
+    reach - equity * cap_pct%. On a tight structural stop, fixed-fractional
+    sizing balloons the position (FIL ran ~2x equity on a ~0.5% stop) and the
+    software stop's slippage then books more than the promised 1% (COTI:
+    -0.77% move landed as -1.4% of equity). Capping notional bounds that
+    overshoot; the trade simply risks LESS than 1% instead of not happening.
+    None = no cap (disabled, or equity unknown)."""
+    if cap_pct <= 0 or not equity or equity <= 0:
+        return None
+    return float(equity) * cap_pct / 100.0
+
+
+def combined_notional_cap(*caps: Optional[float]) -> Optional[float]:
+    """The tightest of the given notional caps, ignoring Nones. None when no
+    cap applies at all (legacy behavior preserved exactly)."""
+    real = [c for c in caps if c is not None]
+    return min(real) if real else None
+
+
+def _equity_for_caps(futures_account, risk_context):
+    """Same equity resolution _leverage_headroom_notional uses, but ALSO
+    available without an exchange snapshot (falls back to the DB-derived
+    account balance) - the per-position cap must hold even when the leverage
+    metric is UNKNOWN."""
+    equity = None
+    if futures_account is not None:
+        equity = getattr(futures_account, "margin_balance", None) or getattr(
+            futures_account, "wallet_balance", None
+        )
+    if not equity:
+        equity = getattr(risk_context, "account_balance", None)
+    return equity
 
 
 class TradeRiskRejected(Exception):
@@ -172,7 +208,17 @@ async def assess_execution_risk(signal_service: SignalService, signal: Signal) -
     # than risk %) rather than not at all. The SAME cap is handed to the sizing
     # below AND to assess_new_trade, so the leverage the engine assesses and
     # the position_size it returns describe one identical position.
-    max_notional = _leverage_headroom_notional(futures, risk_context)
+    # Two caps combine into one max_notional: the PORTFOLIO leverage headroom
+    # (needs an exchange snapshot) and the PER-POSITION gross cap (works from
+    # DB equity too). calculate_position_size handles either identically -
+    # capped size, risk recomputed downward.
+    max_notional = combined_notional_cap(
+        _leverage_headroom_notional(futures, risk_context),
+        per_position_notional_cap(
+            _equity_for_caps(futures, risk_context),
+            get_settings().max_position_notional_pct,
+        ),
+    )
     # Only SUPERSEDE the DB-derived portfolio when a real exchange snapshot
     # actually exists. Passing an exchange-backed context built from `None`
     # would silently DISCARD the open positions the risk context already
