@@ -101,6 +101,23 @@ class Settings(BaseSettings):
     max_pending_entry_distance_pct: float = Field(
         default=2.0, alias="MAX_PENDING_ENTRY_DISTANCE_PCT"
     )
+    # DAILY TRADE CAP (owner's rule, 2026-08-24): the executor places at most
+    # this many trades per ROLLING 24h, LONGs and SHORTs counted together.
+    # A discipline brake, not a quality filter - it takes the first N, since
+    # real-time cannot know the best N. It also naturally limits how many
+    # resting limit orders can stack up on the exchange in one day (7 were
+    # observed resting at once; resting orders can all fill together in one
+    # move and no gate can stop a fill). Signals past the cap are still
+    # RECORDED (paper) - only execution stops. 0 disables.
+    max_trades_per_day: int = Field(default=3, alias="MAX_TRADES_PER_DAY")
+    # OPEN-POSITIONS CAP (owner's rule, 2026-08-24): the 24h cap alone leaks -
+    # 3 trades placed today that are still open tomorrow roll out of the 24h
+    # window, and 3 MORE would be placed on top (6 concurrent, 6% at risk
+    # together). This cap counts trades the executor placed that are still
+    # LIVE (resting entry order or open position, any direction) and refuses
+    # new placements until one closes: yesterday's open trades consume
+    # today's allowance. 0 disables.
+    max_open_positions: int = Field(default=3, alias="MAX_OPEN_POSITIONS")
 
     # ---- Smart AI module (app/strategy/base_strategy.py + strategies) ----
     # Master switch for the whole module and each strategy within it. Every

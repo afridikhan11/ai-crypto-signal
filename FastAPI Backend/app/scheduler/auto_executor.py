@@ -26,12 +26,13 @@ attempted independently; one failure never stops the loop or the others.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from loguru import logger
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.signal import Signal, SignalStatus, NON_TERMINAL_STATUSES
 from app.services import binance_credentials
@@ -46,6 +47,44 @@ from app.services.trading_settings import get_auto_trading_enabled
 # "legacy" for pre-Smart-AI rows). Smart AI signals carry a named strategy_id
 # and are deliberately excluded - see pending_execution_stmt().
 LEGACY_STRATEGY_ID = "legacy"
+
+
+def daily_cap_reached(trades_last_24h: int, cap: int) -> bool:
+    """DAILY TRADE CAP (pure): True when `cap` trades have already been placed
+    in the rolling 24h window - LONGs and SHORTs counted TOGETHER (the owner's
+    rule: 3 trades a day, whichever direction). A discipline brake against
+    over-trading and resting-order stacking, not a quality filter. 0 disables."""
+    return cap > 0 and trades_last_24h >= cap
+
+
+def executed_last_24h_stmt(now: datetime):
+    """Count of trades the executor placed in the rolling 24h before `now`
+    (any direction, any outcome - what matters is that an order was placed
+    and fees/exposure were committed)."""
+    return select(func.count(Signal.id)).where(
+        Signal.executed.is_(True),
+        Signal.executed_at.isnot(None),
+        Signal.executed_at >= now - timedelta(hours=24),
+    )
+
+
+def open_positions_cap_reached(live_executed: int, cap: int) -> bool:
+    """OPEN-POSITIONS CAP (pure): True when `cap` executor-placed trades are
+    still LIVE (resting entry order or open position, any direction). Closes
+    the 24h-cap leak the owner spotted: trades placed yesterday that are still
+    open roll out of the rolling window, so without this a fresh 3 would be
+    stacked on top of yesterday's 3 - yesterday's open trades must consume
+    today's allowance until they close. 0 disables."""
+    return cap > 0 and live_executed >= cap
+
+
+def live_executed_stmt():
+    """Count of executor-placed trades that have not reached a terminal state:
+    a resting entry order (PENDING_ENTRY) or an open position (ACTIVE)."""
+    return select(func.count(Signal.id)).where(
+        Signal.executed.is_(True),
+        Signal.status.in_(NON_TERMINAL_STATUSES),
+    )
 
 
 def pending_execution_stmt():
@@ -133,9 +172,37 @@ class AutoExecutor:
             return
 
         async with AsyncSessionLocal() as session:
+            # DAILY TRADE CAP - see daily_cap_reached(). Counted once per
+            # cycle from the DB, then tracked locally so a single cycle can
+            # never place more than the remaining allowance either.
+            settings = get_settings()
+            cap = settings.max_trades_per_day
+            open_cap = settings.max_open_positions
+            placed_24h = 0
+            if cap > 0:
+                placed_24h = (
+                    await session.execute(executed_last_24h_stmt(datetime.now(timezone.utc)))
+                ).scalar_one()
+            live_open = 0
+            if open_cap > 0:
+                live_open = (await session.execute(live_executed_stmt())).scalar_one()
+
             signals = (await session.execute(pending_execution_stmt())).scalars().unique().all()
             now = asyncio.get_event_loop().time()
             for signal in signals:
+                if daily_cap_reached(placed_24h, cap):
+                    logger.info(
+                        f"AutoExecutor: daily trade cap reached ({placed_24h}/{cap} in 24h, "
+                        f"long+short combined) - remaining signals stay recorded (paper) only."
+                    )
+                    break
+                if open_positions_cap_reached(live_open, open_cap):
+                    logger.info(
+                        f"AutoExecutor: {live_open}/{open_cap} placed trades still live "
+                        f"(resting or open) - no new placements until one closes; "
+                        f"remaining signals stay recorded (paper) only."
+                    )
+                    break
                 sid = str(signal.id)
                 if sid in self._failed_ids:
                     continue                       # hard-failed once, never retry
@@ -144,6 +211,9 @@ class AutoExecutor:
                 self._next_attempt[sid] = now + self._retry_cooldown
                 try:
                     await self._execute_one(session, signal)
+                    if signal.executed:
+                        placed_24h += 1            # count only real placements
+                        live_open += 1             # ...which are now live too
                 except Exception as e:  # noqa: BLE001 - isolate per-signal failures
                     await session.rollback()
                     sym = signal.coin.symbol if signal.coin else "?"
