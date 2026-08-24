@@ -80,12 +80,23 @@ async def _counts(session, executed_only: bool) -> dict:
     return {status: count for status, count in rows}
 
 
+def _move_pct(entry: float, exit_price: float, direction) -> float:
+    if direction is Direction.SHORT:
+        return (entry - exit_price) / entry * 100.0
+    return (exit_price - entry) / entry * 100.0
+
+
 def _pnl_pct(signal) -> float | None:
     """Realised price move as a % of entry, from the level the trade ACTUALLY
     exited at - take_profit for TP_HIT, the (possibly TRAILED) stop_loss for
     STOPPED. This is the honest win/loss: a STOPPED trade whose stop was
     trailed into profit is a WIN, even though its status is 'STOPPED'. Returns
-    None for statuses whose exit price the database does not store (CANCELLED)."""
+    None for statuses whose exit price the database does not store (CANCELLED).
+
+    Partial-TP aware: when TP1 fired (tp1_done), the realized move is the
+    blend of the banked fraction at tp1_price and the remainder at the final
+    exit - so a runner stopped at breakeven after a TP1 partial shows its real
+    ~+1%, not a misleading +0.00%."""
     entry = signal.actual_fill_price or signal.entry_price
     if not entry:
         return None
@@ -95,9 +106,14 @@ def _pnl_pct(signal) -> float | None:
         exit_price = signal.stop_loss  # the trailed stop at the moment it hit
     else:
         return None
-    if signal.direction is Direction.SHORT:
-        return (entry - exit_price) / entry * 100.0
-    return (exit_price - entry) / entry * 100.0
+    runner_move = _move_pct(entry, exit_price, signal.direction)
+    if getattr(signal, "tp1_done", False) and getattr(signal, "tp1_price", None):
+        from app.core.config import get_settings
+
+        fraction = get_settings().signal_tp1_fraction
+        tp1_move = _move_pct(entry, signal.tp1_price, signal.direction)
+        return fraction * tp1_move + (1 - fraction) * runner_move
+    return runner_move
 
 
 def _aggregate_income(items) -> dict:

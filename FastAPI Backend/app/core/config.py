@@ -130,6 +130,18 @@ class Settings(BaseSettings):
     max_position_notional_pct: float = Field(
         default=50.0, alias="MAX_POSITION_NOTIONAL_PCT"
     )
+    # PARTIAL TAKE-PROFIT (owner's idea, 2026-08-25): when an ACTIVE trade
+    # moves signal_tp1_pct% in its favor, close signal_tp1_fraction of the
+    # position and move the stop to breakeven; the remainder runs to the
+    # signal's existing (structure-anchored) take_profit. Motivated directly
+    # by the live record: a stream of trades trailed to breakeven and closed
+    # at +0.00% - banking half at +2% turns those into ~+1% wins, at the cost
+    # of half the payoff on the rare full runner. The final target is NOT
+    # re-priced (the PR #21 lesson: never move the strategy's own levels);
+    # when the structure target sits NEARER than TP1 there is simply no
+    # partial and the trade runs exactly as before. 0 disables.
+    signal_tp1_pct: float = Field(default=2.0, alias="SIGNAL_TP1_PCT")
+    signal_tp1_fraction: float = Field(default=0.5, alias="SIGNAL_TP1_FRACTION")
 
     # ---- Smart AI module (app/strategy/base_strategy.py + strategies) ----
     # Master switch for the whole module and each strategy within it. Every

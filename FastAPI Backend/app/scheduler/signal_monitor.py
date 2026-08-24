@@ -113,6 +113,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.constants import PENDING_ENTRY_EXPIRY_MINUTES
 from app.core.database import AsyncSessionLocal
 from app.core.redis import redis_client
@@ -145,6 +146,26 @@ MANAGEMENT_CANDLES = 500
 # we stop attempting it and let the SOFTWARE stop (this monitor) enforce the
 # stop instead - rather than re-failing, and re-logging, every single poll.
 _UNSUPPORTED_ORDER_CODE = "-4120"
+
+
+def tp1_level_for(entry, direction, tp1_pct: float, take_profit) -> Optional[float]:
+    """PARTIAL TAKE-PROFIT level (pure): entry +/- tp1_pct%, in the trade's
+    favorable direction. Returns None when the feature is disabled, inputs are
+    missing, or the signal's own final target sits NEARER than TP1 - a
+    tiny-range trade gets no partial and runs exactly as before. The final
+    target itself is never re-priced (the PR #21 lesson)."""
+    if tp1_pct <= 0 or not entry or not take_profit:
+        return None
+    if direction == Direction.LONG:
+        tp1 = entry * (1 + tp1_pct / 100.0)
+        return tp1 if take_profit > tp1 else None
+    tp1 = entry * (1 - tp1_pct / 100.0)
+    return tp1 if take_profit < tp1 else None
+
+
+def tp1_reached(price: float, tp1: float, direction) -> bool:
+    """Pure: has the live price reached the TP1 level in the trade's favor?"""
+    return price >= tp1 if direction == Direction.LONG else price <= tp1
 
 
 class SignalMonitor:
@@ -693,6 +714,94 @@ class SignalMonitor:
         finally:
             await trading_service.close()
 
+    async def _maybe_take_partial_profit(
+        self, signal: Signal, symbol: str, price: float
+    ) -> List[Dict]:
+        """PARTIAL TAKE-PROFIT: at TP1 (entry +/- SIGNAL_TP1_PCT%), close
+        SIGNAL_TP1_FRACTION of the live position and move the stop to
+        breakeven; the remainder runs to the signal's existing structure
+        target. Fires at most once per trade (tp1_done). Returns the event
+        dicts to publish (empty when nothing happened). Best-effort on the
+        exchange leg: a failed partial close is logged and retried next poll
+        (tp1_done is only set once the bookkeeping is committed here)."""
+        settings = get_settings()
+        tp1_pct = settings.signal_tp1_pct
+        fraction = settings.signal_tp1_fraction
+        if tp1_pct <= 0 or not (0 < fraction < 1) or signal.tp1_done:
+            return []
+
+        entry = signal.actual_fill_price or signal.entry_price
+        if signal.tp1_price is None:
+            level = tp1_level_for(entry, signal.direction, tp1_pct, signal.take_profit)
+            if level is None:
+                return []          # feature off for this trade (target nearer than TP1)
+            signal.tp1_price = level
+
+        if not tp1_reached(price, signal.tp1_price, signal.direction):
+            return []
+
+        # 1. Bank the partial on the exchange (executed trades only).
+        if signal.executed:
+            closed = await self._partial_close_live_position(signal, symbol, fraction)
+            if not closed:
+                # Exchange leg failed - do NOT mark tp1_done, so the next poll
+                # retries while price is still beyond TP1.
+                return []
+
+        # 2. Move the stop to breakeven (never worsen an already-better stop).
+        stop_moved = False
+        if entry and self._improves_stop(signal, entry):
+            signal.stop_loss = entry
+            stop_moved = True
+            if signal.executed:
+                try:
+                    await self._sync_exchange_stop(signal, symbol, entry)
+                except Exception as e:  # noqa: BLE001 - software stop still enforces it
+                    logger.warning(f"{symbol}: TP1 breakeven stop sync failed (software stop active): {e}")
+
+        signal.tp1_done = True
+        logger.success(
+            f"{symbol}: TP1 HIT at {price} (level {signal.tp1_price}) - "
+            f"{fraction:.0%} banked{' , stop -> breakeven' if stop_moved else ''}; "
+            f"runner continues to {signal.take_profit} (signal {signal.id})."
+        )
+        return [{
+            "event": "tp1_partial",
+            "symbol": symbol,
+            "price": price,
+            "tp1_price": signal.tp1_price,
+            "fraction": fraction,
+            "stop_moved_to_breakeven": stop_moved,
+        }]
+
+    async def _partial_close_live_position(
+        self, signal: Signal, symbol: str, fraction: float
+    ) -> bool:
+        """Close `fraction` of the live position with a reduceOnly MARKET order
+        (same venue mechanics as _force_close_resolved_position). True on
+        success OR when there is nothing to close / no service (bookkeeping
+        may proceed); False only when the exchange call itself failed."""
+        trading_service = self._build_trading_service_for(signal)
+        if trading_service is None:
+            return True
+        try:
+            quantity = await self._get_live_position_quantity(symbol)
+            if not quantity:
+                return True        # already flat on the exchange - nothing to bank
+            part = quantity * fraction
+            direction_sign = 1 if signal.direction == Direction.LONG else -1
+            await trading_service.close_position(symbol, direction_sign * part)
+            logger.success(
+                f"{symbol}: partial close {part} ({fraction:.0%} of {quantity}) "
+                f"at TP1 (signal {signal.id}, env={trading_service.environment})."
+            )
+            return True
+        except BinanceTradingError as exc:
+            logger.warning(f"{symbol}: TP1 partial close FAILED (will retry next poll): {exc}")
+            return False
+        finally:
+            await trading_service.close()
+
     async def _apply_management(
         self, signal: Signal, symbol: str, price: float, actions: List[ManagementAction],
     ) -> List[Dict]:
@@ -1142,6 +1251,19 @@ class SignalMonitor:
                         except Exception as e:  # noqa: BLE001 - never break resolution
                             logger.warning(f"{symbol}: reconcile cleanup errored: {e}")
                         continue
+
+                # PARTIAL TAKE-PROFIT - after resolution (a trade that already
+                # hit its final TP/stop this poll is handled above), before
+                # trade management (which may trail the stop further). Errors
+                # never break the poll; an exchange-leg failure retries next
+                # poll because tp1_done is only set on success.
+                try:
+                    tp1_events = await self._maybe_take_partial_profit(signal, symbol, price)
+                    if tp1_events:
+                        dirty = True
+                        events.extend(tp1_events)
+                except Exception as e:  # noqa: BLE001 - never break the poll
+                    logger.warning(f"{symbol}: partial-TP check errored: {e}")
 
                 if not management_enabled:
                     continue

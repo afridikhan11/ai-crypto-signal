@@ -104,6 +104,16 @@ class Signal(Base, TimestampMixin):
     # win/loss outcomes once enough closed trades have accumulated.
     score_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # ---- Partial take-profit (2026-08-25) ----
+    # TP1 level for the partial exit (entry +/- SIGNAL_TP1_PCT%), lazily set by
+    # the monitor on the first poll of an ACTIVE trade; stays NULL when the
+    # feature is disabled or the structure target sits nearer than TP1 (no
+    # partial - the trade runs exactly as before). `tp1_done` records that the
+    # partial fired, so it can never fire twice and stats can blend the
+    # realized halves honestly.
+    tp1_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tp1_done: Mapped[bool] = mapped_column(default=False, server_default="false")
+
     # ---- Smart AI module (2026-08-20) ----
     # Which strategy produced this signal, for per-strategy performance
     # attribution (the whole point of the module). NULL / "legacy" = the
