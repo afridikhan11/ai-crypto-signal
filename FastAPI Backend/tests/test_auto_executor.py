@@ -12,6 +12,8 @@ from app.scheduler.auto_executor import (
     daily_cap_reached,
     executed_last_24h_stmt,
     execution_allowed,
+    live_executed_stmt,
+    open_positions_cap_reached,
     pending_execution_stmt,
 )
 
@@ -83,3 +85,30 @@ class TestDailyTradeCap:
 
     def test_config_default_is_3(self):
         assert get_settings().max_trades_per_day == 3
+
+
+class TestOpenPositionsCap:
+    """Closes the 24h-cap leak the owner spotted: 3 trades placed yesterday
+    that are still open roll out of the rolling window, and 3 more would have
+    stacked on top. Open trades must consume today's allowance."""
+
+    def test_reached_at_cap(self):
+        assert open_positions_cap_reached(3, cap=3) is True
+        assert open_positions_cap_reached(5, cap=3) is True
+
+    def test_below_cap_allows(self):
+        assert open_positions_cap_reached(2, cap=3) is False
+
+    def test_zero_disables(self):
+        assert open_positions_cap_reached(100, cap=0) is False
+
+    def test_live_query_counts_executed_non_terminal_any_direction(self):
+        sql = str(live_executed_stmt().compile(compile_kwargs={"literal_binds": True}))
+        # Live = executor-placed AND not terminal (resting order or open
+        # position); direction-blind, like the daily cap.
+        assert "executed" in sql
+        assert "status" in sql
+        assert "direction" not in sql
+
+    def test_config_default_is_3(self):
+        assert get_settings().max_open_positions == 3
