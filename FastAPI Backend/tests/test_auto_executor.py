@@ -5,7 +5,15 @@ The one thing that absolutely must hold: it can NEVER place a mainnet order.
 execution_allowed() is the single decision that guarantees it, so it is tested
 exhaustively here.
 """
-from app.scheduler.auto_executor import execution_allowed, pending_execution_stmt
+from datetime import datetime, timezone
+
+from app.core.config import get_settings
+from app.scheduler.auto_executor import (
+    daily_cap_reached,
+    executed_last_24h_stmt,
+    execution_allowed,
+    pending_execution_stmt,
+)
 
 
 class TestExecutionAllowed:
@@ -45,3 +53,33 @@ class TestObserveOnlyGuard:
     def test_query_still_filters_unexecuted_non_terminal(self):
         sql = self._sql()
         assert "executed" in sql and "status" in sql
+
+
+class TestDailyTradeCap:
+    """The owner's rule: at most N trades per rolling 24h, LONGs and SHORTs
+    counted together. A placement cap - signals past it stay paper-only."""
+
+    def test_reached_at_cap(self):
+        assert daily_cap_reached(3, cap=3) is True
+        assert daily_cap_reached(4, cap=3) is True
+
+    def test_below_cap_allows(self):
+        assert daily_cap_reached(2, cap=3) is False
+
+    def test_zero_disables(self):
+        assert daily_cap_reached(100, cap=0) is False
+
+    def test_count_query_is_direction_blind_and_24h_bounded(self):
+        sql = str(
+            executed_last_24h_stmt(datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)).compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+        # Counts EXECUTED trades in the window - and deliberately does NOT
+        # filter by direction (long + short share the one daily allowance).
+        assert "executed" in sql
+        assert "executed_at" in sql
+        assert "direction" not in sql
+
+    def test_config_default_is_3(self):
+        assert get_settings().max_trades_per_day == 3
