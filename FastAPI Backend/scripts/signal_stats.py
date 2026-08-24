@@ -4,6 +4,13 @@ Signal performance summary — win/loss/win-rate at a glance.
 Run inside the app container:
 
     docker compose exec app python scripts/signal_stats.py
+    docker compose exec app python scripts/signal_stats.py --since 2026-08-25
+
+`--since YYYY-MM-DD` restricts EVERY section (counts, trade list, exchange
+truth) to signals CREATED on/after that UTC date - so a rule-change era can be
+measured cleanly without deleting any history. Exchange-truth in since-mode
+attributes only trades OPENED in the era; the tail income of trades opened
+before it falls into the "manual/non-bot" remainder and is labelled as such.
 
 Prints, over ALL signals and (separately) over only EXECUTED signals:
   - a count of every status,
@@ -72,10 +79,12 @@ _LABEL = {
 }
 
 
-async def _counts(session, executed_only: bool) -> dict:
+async def _counts(session, executed_only: bool, since=None) -> dict:
     stmt = select(Signal.status, func.count(Signal.id)).group_by(Signal.status)
     if executed_only:
         stmt = stmt.where(Signal.executed.is_(True))
+    if since is not None:
+        stmt = stmt.where(Signal.created_at >= since)
     rows = (await session.execute(stmt)).all()
     return {status: count for status, count in rows}
 
@@ -185,15 +194,18 @@ def _windows_from_entries(entry_rows, now_ms: int) -> dict:
     return windows
 
 
-async def _load_bot_windows(session) -> dict:
-    """Entry-anchored attribution windows for every trade the bot placed."""
-    rows = (
-        await session.execute(
-            select(Coin.symbol, Signal.executed_at)
-            .join(Coin, Signal.coin_id == Coin.id)
-            .where(Signal.executed.is_(True), Signal.executed_at.isnot(None))
-        )
-    ).all()
+async def _load_bot_windows(session, since=None) -> dict:
+    """Entry-anchored attribution windows for every trade the bot placed.
+    With `since`, only trades OPENED on/after it build windows - the era's own
+    trades; older trades' tail income then lands in the non-bot remainder."""
+    stmt = (
+        select(Coin.symbol, Signal.executed_at)
+        .join(Coin, Signal.coin_id == Coin.id)
+        .where(Signal.executed.is_(True), Signal.executed_at.isnot(None))
+    )
+    if since is not None:
+        stmt = stmt.where(Signal.executed_at >= since)
+    rows = (await session.execute(stmt)).all()
     entry_rows = [(symbol, int(executed_at.timestamp() * 1000)) for symbol, executed_at in rows]
     return _windows_from_entries(entry_rows, int(time.time() * 1000))
 
@@ -213,7 +225,7 @@ async def _fetch_income_windowed(svc, start_ms: int, end_ms: int) -> list:
     return items
 
 
-async def _print_exchange_truth(session) -> None:
+async def _print_exchange_truth(session, since=None) -> None:
     """Real money, straight from the exchange: realized PnL, commissions and
     funding actually booked to the account - the figures the price-move %
     above cannot show (it ignores fees, funding and fill slippage).
@@ -221,15 +233,15 @@ async def _print_exchange_truth(session) -> None:
     Degrades honestly: if no API credentials are saved, the exchange is
     unreachable, or the account has no futures income in the window, it prints
     why and returns rather than failing the whole report."""
-    print("\n=== EXCHANGE TRUTH (real realized P/L, fees & funding) ===")
+    era = f" - SINCE {since.date()}" if since is not None else ""
+    print(f"\n=== EXCHANGE TRUTH (real realized P/L, fees & funding){era} ===")
 
-    earliest = (
-        await session.execute(
-            select(func.min(Signal.executed_at)).where(Signal.executed.is_(True))
-        )
-    ).scalar()
+    earliest_stmt = select(func.min(Signal.executed_at)).where(Signal.executed.is_(True))
+    if since is not None:
+        earliest_stmt = earliest_stmt.where(Signal.executed_at >= since)
+    earliest = (await session.execute(earliest_stmt)).scalar()
     if earliest is None:
-        print("  (no executed trades yet - nothing to reconcile)")
+        print("  (no executed trades in this window - nothing to reconcile)")
         return
 
     try:
@@ -265,7 +277,7 @@ async def _print_exchange_truth(session) -> None:
 
     # Attribute the ledger to the BOT's own trades vs everything else (your
     # manual activity), so the bot's real scorecard is isolated.
-    windows = await _load_bot_windows(session)
+    windows = await _load_bot_windows(session, since=since)
     bot_items, other_items = _split_bot_income(items, windows)
     bot = _aggregate_income(bot_items)
     account = _aggregate_income(items)
@@ -320,34 +332,47 @@ def _print_block(title: str, counts: dict) -> None:
     print(f"  Win-rate                : {win_rate:.1f}%  ({wins}W / {losses}L / {cancelled}C)")
 
 
-async def main() -> None:
+def _since_filter(stmt, since):
+    return stmt.where(Signal.created_at >= since) if since is not None else stmt
+
+
+async def main(since=None) -> None:
     async with AsyncSessionLocal() as session:
-        total = (await session.execute(select(func.count(Signal.id)))).scalar_one()
-        avg_conf = (await session.execute(select(func.avg(Signal.confidence)))).scalar() or 0.0
-        avg_rr = (await session.execute(select(func.avg(Signal.risk_reward)))).scalar() or 0.0
+        total = (
+            await session.execute(_since_filter(select(func.count(Signal.id)), since))
+        ).scalar_one()
+        avg_conf = (
+            await session.execute(_since_filter(select(func.avg(Signal.confidence)), since))
+        ).scalar() or 0.0
+        avg_rr = (
+            await session.execute(_since_filter(select(func.avg(Signal.risk_reward)), since))
+        ).scalar() or 0.0
 
         print("========================================")
         print(" SIGNAL PERFORMANCE SUMMARY")
+        if since is not None:
+            print(f" (SINCE {since.date()} UTC - earlier history hidden, not deleted)")
         print("========================================")
         print(f" Total signals ever      : {total}")
         print(f" Avg confidence          : {avg_conf:.1f}")
         print(f" Avg risk:reward         : {avg_rr:.2f}")
 
-        _print_block("ALL SIGNALS (paper + executed)", await _counts(session, executed_only=False))
-        _print_block("EXECUTED ONLY (real testnet trades)", await _counts(session, executed_only=True))
+        _print_block("ALL SIGNALS (paper + executed)", await _counts(session, executed_only=False, since=since))
+        _print_block("EXECUTED ONLY (real testnet trades)", await _counts(session, executed_only=True, since=since))
 
         # Per-trade list of executed, decided trades (the real outcomes).
-        rows = (
-            await session.execute(
-                select(Signal, Coin.symbol)
-                .join(Coin, Signal.coin_id == Coin.id)
-                .where(
-                    Signal.executed.is_(True),
-                    Signal.status.in_(DECIDED_STATUSES),
-                )
-                .order_by(Signal.closed_at.asc().nullslast())
+        decided_stmt = (
+            select(Signal, Coin.symbol)
+            .join(Coin, Signal.coin_id == Coin.id)
+            .where(
+                Signal.executed.is_(True),
+                Signal.status.in_(DECIDED_STATUSES),
             )
-        ).all()
+            .order_by(Signal.closed_at.asc().nullslast())
+        )
+        if since is not None:
+            decided_stmt = decided_stmt.where(Signal.created_at >= since)
+        rows = (await session.execute(decided_stmt)).all()
 
         print("\n=== EXECUTED DECIDED TRADES (by ACTUAL profit/loss) ===")
         if not rows:
@@ -387,8 +412,31 @@ async def main() -> None:
 
         # Real-money reconciliation from the exchange ledger (fees + funding +
         # slippage included). Degrades honestly if the exchange isn't reachable.
-        await _print_exchange_truth(session)
+        await _print_exchange_truth(session, since=since)
+
+
+def _parse_since(argv) -> "datetime | None":
+    """--since YYYY-MM-DD -> timezone-aware UTC midnight, or None."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Signal performance summary")
+    parser.add_argument(
+        "--since",
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="restrict every section to signals created on/after this UTC date "
+        "(earlier history is hidden, never deleted)",
+    )
+    args = parser.parse_args(argv)
+    if args.since is None:
+        return None
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        parser.error(f"--since must be YYYY-MM-DD, got {args.since!r}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(since=_parse_since(sys.argv[1:])))

@@ -162,3 +162,39 @@ class TestBotAttribution:
         # AKE (no window) and the pre-entry NEAR row are 'other'.
         assert {i.symbol for i in other} == {"AKEUSDT", "NEARUSDT"}
         assert len(other) == 2
+
+
+# ======================================================================
+# 4. --since era filter
+# ======================================================================
+class TestSinceParsing:
+    def setup_method(self):
+        self.stats = _load_stats_module()
+
+    def test_parses_utc_midnight(self):
+        from datetime import datetime, timezone
+        since = self.stats._parse_since(["--since", "2026-08-25"])
+        assert since == datetime(2026, 8, 25, tzinfo=timezone.utc)
+
+    def test_none_when_absent(self):
+        assert self.stats._parse_since([]) is None
+
+    def test_bad_format_exits(self):
+        import pytest
+        with pytest.raises(SystemExit):
+            self.stats._parse_since(["--since", "25-08-2026"])
+
+    def test_since_filter_bounds_created_at(self):
+        from datetime import datetime, timezone
+        from sqlalchemy import select, func
+        from app.models.signal import Signal
+        since = datetime(2026, 8, 25, tzinfo=timezone.utc)
+        sql = str(
+            self.stats._since_filter(select(func.count(Signal.id)), since).compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+        assert "created_at >=" in sql
+        # No filter when since is None.
+        plain = str(self.stats._since_filter(select(func.count(Signal.id)), None).compile())
+        assert "created_at" not in plain
