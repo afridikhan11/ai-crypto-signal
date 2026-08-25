@@ -45,16 +45,16 @@ class TestReplaceStopLossOrdering:
             return [{"orderId": 111, "type": "STOP_MARKET", "reduceOnly": True, "stopPrice": "90.0"}]
 
         async def fake_signed_post(path, params):
-            call_order.append(("post", params.get("stopPrice")))
+            call_order.append(("post", params.get("triggerPrice", params.get("stopPrice"))))
             return {"orderId": 222, "status": "NEW"}
 
-        async def fake_cancel_order(symbol, order_id):
+        async def fake_cancel_order(symbol, order_id, is_algo=False):
             call_order.append(("cancel", order_id))
 
         svc._get_symbol_filters = _fake_filters
         svc.get_open_stop_orders = fake_get_open_stop_orders
         svc._signed_post = fake_signed_post
-        svc.cancel_order = fake_cancel_order
+        svc.cancel_conditional_order = fake_cancel_order
 
         result = _run(svc.replace_stop_loss("BTCUSDT", "LONG", 1.0, 95.0, signal_id="11111111-1111-1111-1111-111111111111"))
 
@@ -74,13 +74,13 @@ class TestReplaceStopLossOrdering:
         async def fake_signed_post(path, params):
             raise BinanceTradingError("simulated rejection")
 
-        async def fake_cancel_order(symbol, order_id):
+        async def fake_cancel_order(symbol, order_id, is_algo=False):
             cancel_called.append(order_id)
 
         svc._get_symbol_filters = _fake_filters
         svc.get_open_stop_orders = fake_get_open_stop_orders
         svc._signed_post = fake_signed_post
-        svc.cancel_order = fake_cancel_order
+        svc.cancel_conditional_order = fake_cancel_order
 
         result = _run(svc.replace_stop_loss("BTCUSDT", "LONG", 1.0, 95.0, signal_id="sig-1"))
 
@@ -99,13 +99,13 @@ class TestReplaceStopLossOrdering:
         async def fake_signed_post(path, params):
             return {"orderId": 222, "status": "NEW"}
 
-        async def fake_cancel_order(symbol, order_id):
+        async def fake_cancel_order(symbol, order_id, is_algo=False):
             raise BinanceTradingError("cancel failed")
 
         svc._get_symbol_filters = _fake_filters
         svc.get_open_stop_orders = fake_get_open_stop_orders
         svc._signed_post = fake_signed_post
-        svc.cancel_order = fake_cancel_order
+        svc.cancel_conditional_order = fake_cancel_order
 
         result = _run(svc.replace_stop_loss("BTCUSDT", "LONG", 1.0, 95.0, signal_id="sig-1"))
 
@@ -190,13 +190,13 @@ class TestExchangeTimeoutAndRetry:
 
         cancel_called = []
 
-        async def fake_cancel_order(symbol, order_id):
+        async def fake_cancel_order(symbol, order_id, is_algo=False):
             cancel_called.append(order_id)
 
         svc._get_symbol_filters = _fake_filters
         svc.get_open_stop_orders = fake_get_open_stop_orders
         svc._signed_post = always_times_out
-        svc.cancel_order = fake_cancel_order
+        svc.cancel_conditional_order = fake_cancel_order
         svc.STOP_PLACEMENT_RETRY_DELAY_SECONDS = 0.0
 
         result = _run(svc.replace_stop_loss("BTCUSDT", "LONG", 1.0, 95.0, signal_id="sig-1"))

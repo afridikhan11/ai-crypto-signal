@@ -706,6 +706,13 @@ class SignalMonitor:
                         await trading_service.cancel_order(symbol, oid)
             except BinanceTradingError as exc:
                 logger.warning(f"{symbol}: could not clean up resting orders after {status_label}: {exc}")
+            # Conditional (algo) stops live on a separate service and never
+            # appear in /fapi/v1/openOrders, so they need their own sweep or
+            # a stray stop would keep resting against a now-flat position.
+            try:
+                await trading_service.cancel_all_conditional_orders(symbol)
+            except BinanceTradingError as exc:
+                logger.debug(f"{symbol}: no algo orders to clean up after {status_label} ({exc}).")
         except BinanceTradingError as exc:
             logger.warning(
                 f"{symbol}: force-close on {status_label} FAILED for signal {signal.id}: {exc}. "

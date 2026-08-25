@@ -71,7 +71,7 @@ import hmac
 import math
 import os
 import time
-from typing import Optional
+from typing import Dict, Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -91,6 +91,36 @@ class BinanceTradingError(Exception):
     def __init__(self, message: str, code: Optional[int] = None):
         super().__init__(message)
         self.code = code
+
+
+# ----------------------------------------------------------------------
+# CONDITIONAL ORDERS (STOP_MARKET / TAKE_PROFIT_MARKET / ...)
+#
+# Binance migrated USDS-M conditional orders to the Algo Order service on
+# 2025-12-09. Since then /fapi/v1/order answers -4120 for them:
+#   "Order type not supported for this endpoint. Please use the Algo Order
+#    API endpoints instead."
+# That rejection is what left this platform's stop orders unplaced and pushed
+# the monitor onto its SOFTWARE stop - it was NEVER a Demo-venue limitation,
+# and it would have broken mainnet identically. Conditional orders now go to
+# the paths below; a plain reduceOnly LIMIT take-profit is unaffected and
+# still belongs on /fapi/v1/order.
+# ----------------------------------------------------------------------
+ALGO_ORDER_PATH = "/fapi/v1/algoOrder"
+ALGO_OPEN_ORDERS_PATH = "/fapi/v1/openAlgoOrders"
+ALGO_CANCEL_OPEN_ORDERS_PATH = "/fapi/v1/algoOpenOrders"
+
+# Which endpoint a given host actually accepts conditional orders on, learned
+# once at runtime and remembered per base_url: True = Algo API, False = the
+# legacy /fapi/v1/order endpoint (older/self-hosted venues). Module-level
+# because a service instance is short-lived (built per call).
+_conditional_uses_algo: Dict[str, bool] = {}
+
+
+def _is_true(value) -> bool:
+    """Binance returns booleans as real bools on some paths and as the strings
+    "true"/"True" on others."""
+    return value in (True, "true", "True")
 
 
 class OrderResult(BaseModel):
@@ -257,6 +287,88 @@ class BinanceTradingService:
         """The ONLY method in this codebase that sends an order-cancelling
         DELETE to Binance."""
         return await self._signed_request("DELETE", path, params)
+
+    # ------------------------------------------------------------------
+    # Conditional orders - see the ALGO_* constants' comment above.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _to_algo_params(params: dict) -> dict:
+        """Translate legacy /fapi/v1/order conditional params into Algo API
+        form: `type` -> `algoType=CONDITIONAL` + `orderType`, `stopPrice` ->
+        `triggerPrice`, `newClientOrderId` -> `clientAlgoId`. Everything else
+        (symbol/side/quantity/reduceOnly/workingType) carries over unchanged,
+        so the ORDER ITSELF is identical - only the endpoint differs."""
+        algo = dict(params)
+        algo["algoType"] = "CONDITIONAL"
+        algo["orderType"] = algo.pop("type")
+        if "stopPrice" in algo:
+            algo["triggerPrice"] = algo.pop("stopPrice")
+        if "newClientOrderId" in algo:
+            algo["clientAlgoId"] = algo.pop("newClientOrderId")
+        return algo
+
+    @staticmethod
+    def _normalise_algo_order(raw: dict) -> dict:
+        """Give an Algo order the same `orderId` / `stopPrice` keys the rest of
+        this module already reads, and tag it `_is_algo` so a later cancel is
+        routed to the algo endpoint rather than /fapi/v1/order."""
+        out = dict(raw)
+        if out.get("orderId") is None and out.get("algoId") is not None:
+            out["orderId"] = out["algoId"]
+        if out.get("stopPrice") is None and out.get("triggerPrice") is not None:
+            out["stopPrice"] = out["triggerPrice"]
+        if out.get("type") is None and out.get("orderType") is not None:
+            out["type"] = out["orderType"]
+        out["_is_algo"] = True
+        return out
+
+    async def _place_conditional_order(self, params: dict) -> dict:
+        """Place ONE conditional order (STOP_MARKET etc.), on whichever
+        endpoint this host accepts.
+
+        Tries the Algo Order API first - mandatory on Binance since 2025-12-09
+        - and falls back ONCE to the legacy /fapi/v1/order endpoint for venues
+        still on the old API. The answer is remembered per host, so the probe
+        happens once, not on every order, and after that a failure is a REAL
+        failure and is raised rather than silently re-routed.
+
+        Returns a dict carrying `orderId` whichever endpoint served it."""
+        prefers_algo = _conditional_uses_algo.get(self.base_url)
+
+        if prefers_algo is not False:
+            try:
+                raw = await self._signed_post(ALGO_ORDER_PATH, self._to_algo_params(params))
+                if prefers_algo is None:
+                    _conditional_uses_algo[self.base_url] = True
+                    logger.success(
+                        f"Conditional orders on {self.base_url} routed to the Algo Order API "
+                        f"({ALGO_ORDER_PATH}) - exchange-native stops are active."
+                    )
+                return self._normalise_algo_order(raw)
+            except BinanceTradingError as exc:
+                if prefers_algo is True:
+                    raise  # already proven here - this is a genuine order failure
+                logger.warning(
+                    f"Algo Order API rejected a conditional order on {self.base_url} ({exc}); "
+                    f"falling back to the legacy {'/fapi/v1/order'} endpoint once."
+                )
+
+        raw = await self._signed_post("/fapi/v1/order", params)
+        _conditional_uses_algo[self.base_url] = False
+        return raw
+
+    async def cancel_conditional_order(self, symbol: str, order_id, is_algo: bool = False) -> None:
+        """Cancel one conditional order on the endpoint that owns it."""
+        if is_algo:
+            await self._signed_delete(ALGO_ORDER_PATH, {"symbol": symbol.upper(), "algoId": order_id})
+        else:
+            await self._signed_delete("/fapi/v1/order", {"symbol": symbol.upper(), "orderId": order_id})
+
+    async def cancel_all_conditional_orders(self, symbol: str) -> None:
+        """Cancel every resting ALGO (conditional) order for `symbol`. Used by
+        the monitor's post-resolution cleanup, which otherwise only sees plain
+        orders on /fapi/v1/openOrders and would leave a stray stop behind."""
+        await self._signed_delete(ALGO_CANCEL_OPEN_ORDERS_PATH, {"symbol": symbol.upper()})
 
     @staticmethod
     def _parse_or_raise(resp: httpx.Response, context: str):
@@ -462,7 +574,7 @@ class BinanceTradingService:
                 "reduceOnly": "true",
             }
             sl_params.update(self._client_order_id(signal_id, "S") or {})
-            sl_raw = await self._signed_post("/fapi/v1/order", sl_params)
+            sl_raw = await self._place_conditional_order(sl_params)
             sl_order = OrderResult(
                 order_id=sl_raw["orderId"],
                 symbol=symbol,
@@ -573,7 +685,7 @@ class BinanceTradingService:
             "timeInForce": "GTC",
         }
         params.update(self._client_order_id(signal_id, "E") or {})
-        raw = await self._signed_post("/fapi/v1/order", params)
+        raw = await self._place_conditional_order(params)
         logger.info(
             f"{symbol}: ICT pending LIMIT entry placed | {direction} | qty={qty} @ {limit_price} "
             f"| order {raw['orderId']}"
@@ -737,7 +849,7 @@ class BinanceTradingService:
                 "reduceOnly": "true",
             }
             sl_params.update(self._client_order_id(signal_id, "S") or {})
-            sl_raw = await self._signed_post("/fapi/v1/order", sl_params)
+            sl_raw = await self._place_conditional_order(sl_params)
             sl_order = OrderResult(
                 order_id=sl_raw["orderId"], symbol=symbol, side=exit_side,
                 order_type="STOP_MARKET", status=sl_raw.get("status", "NEW"),
@@ -852,15 +964,38 @@ class BinanceTradingService:
         one-order-per-signal execution model - a list is still returned
         (rather than the single most-recent one) so a caller can safely
         cancel every stray stop it finds, not just the newest.
+
+        Reads BOTH services: conditional orders live on the Algo endpoint
+        since Binance's 2025-12-09 migration, while a stop placed before it
+        (or on a venue still using the old API) rests on /fapi/v1/openOrders.
+        Every row is normalised to carry `orderId` / `stopPrice` plus an
+        `_is_algo` tag, so a caller can cancel it on the endpoint that owns it
+        without knowing which service it came from.
         """
         symbol = symbol.upper()
-        rows = await self._signed_get("/fapi/v1/openOrders", {"symbol": symbol})
-        if not isinstance(rows, list):
-            return []
-        return [
-            r for r in rows
-            if r.get("type") == "STOP_MARKET" and r.get("reduceOnly") in (True, "true", "True")
-        ]
+        found: list[dict] = []
+
+        try:
+            raw = await self._signed_get(ALGO_OPEN_ORDERS_PATH, {"symbol": symbol})
+            rows = raw.get("orders", []) if isinstance(raw, dict) else raw
+            for r in rows if isinstance(rows, list) else []:
+                if r.get("orderType") == "STOP_MARKET" and _is_true(r.get("reduceOnly")):
+                    found.append(self._normalise_algo_order(r))
+        except BinanceTradingError as exc:
+            # A venue without the algo service is not an error here - the
+            # legacy read below still finds its stops.
+            logger.debug(f"{symbol}: algo open-orders read unavailable: {exc}")
+
+        try:
+            rows = await self._signed_get("/fapi/v1/openOrders", {"symbol": symbol})
+            found += [
+                r for r in (rows if isinstance(rows, list) else [])
+                if r.get("type") == "STOP_MARKET" and _is_true(r.get("reduceOnly"))
+            ]
+        except BinanceTradingError as exc:
+            logger.debug(f"{symbol}: legacy open-orders read failed: {exc}")
+
+        return found
 
     async def get_all_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
         """
@@ -957,7 +1092,7 @@ class BinanceTradingService:
         last_network_error: Optional[Exception] = None
         for attempt in range(1, self.STOP_PLACEMENT_MAX_ATTEMPTS + 1):
             try:
-                new_raw = await self._signed_post("/fapi/v1/order", new_params)
+                new_raw = await self._place_conditional_order(new_params)
                 last_network_error = None
                 break
             except BinanceTradingError as exc:
@@ -1002,7 +1137,11 @@ class BinanceTradingService:
             if old_id is None or old_id == new_raw["orderId"]:
                 continue
             try:
-                await self.cancel_order(symbol, old_id)
+                # Route the cancel to the service that owns the order - an
+                # algo (conditional) stop is not cancellable on /fapi/v1/order.
+                await self.cancel_conditional_order(
+                    symbol, old_id, is_algo=old.get("_is_algo", False)
+                )
                 cancelled_ids.append(old_id)
                 logger.info(f"{symbol}: old stop-loss order {old_id} cancelled.")
             except BinanceTradingError as exc:
