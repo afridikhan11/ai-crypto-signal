@@ -116,6 +116,24 @@ ALGO_CANCEL_OPEN_ORDERS_PATH = "/fapi/v1/algoOpenOrders"
 # because a service instance is short-lived (built per call).
 _conditional_uses_algo: Dict[str, bool] = {}
 
+# The Algo service's REQUEST spelling differs from the fields it returns, and
+# is not consistently documented. demo-fapi answered our first attempt with
+#   -1102 "Mandatory parameter 'type' was not sent"
+# even though responses carry `orderType` - i.e. the request wants the LEGACY
+# `type`. Because a wrong guess costs a live stop, try a short ordered ladder
+# of spellings and remember the one THIS host accepts. Only -1102 (missing or
+# malformed parameter) advances the ladder; every other error is a genuine
+# order failure and is raised immediately.
+_ALGO_PARAM_VARIANTS = (
+    {},                                                       # legacy names + algoType
+    {"stopPrice": "triggerPrice"},                            # trigger renamed
+    {"stopPrice": "triggerPrice", "newClientOrderId": "clientAlgoId"},
+)
+_MALFORMED_PARAM_CODE = -1102
+
+# Which entry of the ladder above a host accepted, per base_url.
+_algo_param_variant: Dict[str, int] = {}
+
 
 def _is_true(value) -> bool:
     """Binance returns booleans as real bools on some paths and as the strings
@@ -292,19 +310,19 @@ class BinanceTradingService:
     # Conditional orders - see the ALGO_* constants' comment above.
     # ------------------------------------------------------------------
     @staticmethod
-    def _to_algo_params(params: dict) -> dict:
-        """Translate legacy /fapi/v1/order conditional params into Algo API
-        form: `type` -> `algoType=CONDITIONAL` + `orderType`, `stopPrice` ->
-        `triggerPrice`, `newClientOrderId` -> `clientAlgoId`. Everything else
-        (symbol/side/quantity/reduceOnly/workingType) carries over unchanged,
-        so the ORDER ITSELF is identical - only the endpoint differs."""
+    def _to_algo_params(params: dict, renames: Optional[dict] = None) -> dict:
+        """Build the Algo API payload for a conditional order.
+
+        The order ITSELF is unchanged - only `algoType=CONDITIONAL` is added,
+        plus whatever field renames this host turned out to need (see
+        _ALGO_PARAM_VARIANTS). Keeping the legacy spellings by default is
+        deliberate: the live service demanded `type`, not the `orderType` its
+        own responses carry."""
         algo = dict(params)
         algo["algoType"] = "CONDITIONAL"
-        algo["orderType"] = algo.pop("type")
-        if "stopPrice" in algo:
-            algo["triggerPrice"] = algo.pop("stopPrice")
-        if "newClientOrderId" in algo:
-            algo["clientAlgoId"] = algo.pop("newClientOrderId")
+        for old, new in (renames or {}).items():
+            if old in algo:
+                algo[new] = algo.pop(old)
         return algo
 
     @staticmethod
@@ -336,22 +354,42 @@ class BinanceTradingService:
         prefers_algo = _conditional_uses_algo.get(self.base_url)
 
         if prefers_algo is not False:
-            try:
-                raw = await self._signed_post(ALGO_ORDER_PATH, self._to_algo_params(params))
-                if prefers_algo is None:
-                    _conditional_uses_algo[self.base_url] = True
-                    logger.success(
-                        f"Conditional orders on {self.base_url} routed to the Algo Order API "
-                        f"({ALGO_ORDER_PATH}) - exchange-native stops are active."
+            known = _algo_param_variant.get(self.base_url)
+            # A host with a proven spelling uses only that one; an unknown host
+            # walks the ladder until the service stops calling the payload
+            # malformed.
+            indices = [known] if known is not None else range(len(_ALGO_PARAM_VARIANTS))
+            last_error: Optional[BinanceTradingError] = None
+            for index in indices:
+                try:
+                    raw = await self._signed_post(
+                        ALGO_ORDER_PATH, self._to_algo_params(params, _ALGO_PARAM_VARIANTS[index])
                     )
-                return self._normalise_algo_order(raw)
-            except BinanceTradingError as exc:
-                if prefers_algo is True:
-                    raise  # already proven here - this is a genuine order failure
-                logger.warning(
-                    f"Algo Order API rejected a conditional order on {self.base_url} ({exc}); "
-                    f"falling back to the legacy {'/fapi/v1/order'} endpoint once."
-                )
+                    if known is None:
+                        _conditional_uses_algo[self.base_url] = True
+                        _algo_param_variant[self.base_url] = index
+                        logger.success(
+                            f"Conditional orders on {self.base_url} routed to the Algo Order API "
+                            f"({ALGO_ORDER_PATH}, param set #{index}) - exchange-native stops are active."
+                        )
+                    return self._normalise_algo_order(raw)
+                except BinanceTradingError as exc:
+                    if known is not None:
+                        # This host's spelling is proven, so this is a genuine
+                        # order failure - surface it, never silently re-route
+                        # to an endpoint that would answer -4120.
+                        raise
+                    last_error = exc
+                    if exc.code != _MALFORMED_PARAM_CODE:
+                        # Not a spelling problem - this host probably has no
+                        # algo service at all. Stop probing and try legacy.
+                        break
+                    # Wrong spelling for this host: try the next one.
+
+            logger.warning(
+                f"Algo Order API unusable on {self.base_url} ({last_error}); "
+                f"falling back to the legacy /fapi/v1/order endpoint once."
+            )
 
         raw = await self._signed_post("/fapi/v1/order", params)
         _conditional_uses_algo[self.base_url] = False

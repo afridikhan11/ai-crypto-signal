@@ -41,8 +41,10 @@ def _run(coro):
 def _clear_learned_routing():
     """The algo/legacy choice is remembered per host - reset it between tests."""
     bts._conditional_uses_algo.clear()
+    bts._algo_param_variant.clear()
     yield
     bts._conditional_uses_algo.clear()
+    bts._algo_param_variant.clear()
 
 
 def _service():
@@ -68,20 +70,29 @@ class _Recorder:
 # Param translation
 # ======================================================================
 class TestAlgoParamTranslation:
-    def test_translates_type_price_and_client_id(self):
+    def test_default_payload_keeps_legacy_spellings(self):
+        # The live service demanded `type` (-1102) even though its responses
+        # carry `orderType`, so the default payload changes nothing but adds
+        # algoType.
         algo = BinanceTradingService._to_algo_params(STOP_PARAMS)
         assert algo["algoType"] == "CONDITIONAL"
-        assert algo["orderType"] == "STOP_MARKET"
-        assert algo["triggerPrice"] == 102.5
-        assert algo["clientAlgoId"] == "sig-abc-S"
-        # The legacy spellings are gone, the order itself is unchanged.
-        assert "type" not in algo and "stopPrice" not in algo and "newClientOrderId" not in algo
+        assert algo["type"] == "STOP_MARKET"
+        assert algo["stopPrice"] == 102.5
+        assert algo["newClientOrderId"] == "sig-abc-S"
         assert algo["symbol"] == "BTCUSDT" and algo["side"] == "BUY"
         assert algo["quantity"] == 0.01 and algo["reduceOnly"] == "true"
 
+    def test_renames_apply_when_a_host_needs_them(self):
+        algo = BinanceTradingService._to_algo_params(
+            STOP_PARAMS, {"stopPrice": "triggerPrice", "newClientOrderId": "clientAlgoId"}
+        )
+        assert algo["triggerPrice"] == 102.5 and "stopPrice" not in algo
+        assert algo["clientAlgoId"] == "sig-abc-S" and "newClientOrderId" not in algo
+        assert algo["type"] == "STOP_MARKET"      # untouched by these renames
+
     def test_does_not_mutate_the_caller_dict(self):
         before = dict(STOP_PARAMS)
-        BinanceTradingService._to_algo_params(STOP_PARAMS)
+        BinanceTradingService._to_algo_params(STOP_PARAMS, {"stopPrice": "triggerPrice"})
         assert STOP_PARAMS == before
 
     def test_normalise_exposes_orderid_and_stopprice(self):
@@ -125,18 +136,80 @@ class TestConditionalRouting:
         # The legacy answer is remembered - no repeat probe.
         assert bts._conditional_uses_algo[svc.base_url] is False
 
-    def test_learned_algo_host_does_not_fall_back_on_a_real_failure(self):
+    def test_ladder_advances_past_a_malformed_payload_and_remembers(self):
+        # Reproduces what demo-fapi actually did: reject one spelling with
+        # -1102, accept the next. The winning variant is then reused, so the
+        # ladder is walked once per host, not once per order.
+        svc = _service()
+
+        def behavior(path, p):
+            if "triggerPrice" not in p:
+                return BinanceTradingError(
+                    "Mandatory parameter 'triggerPrice' was not sent", code=-1102
+                )
+            return {"algoId": 55, "algoStatus": "NEW"}
+
+        post = _Recorder(behavior)
+        svc._signed_post = post
+
+        raw = _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+        assert raw["orderId"] == 55
+        assert len(post.calls) == 2                       # variant 0 rejected, 1 accepted
+        assert bts._algo_param_variant[svc.base_url] == 1
+
+        post.calls.clear()
+        _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+        assert len(post.calls) == 1                       # straight to the proven spelling
+        assert "triggerPrice" in post.calls[0][1]
+
+    def test_proven_host_raises_a_real_error_without_probing(self):
+        # Once a host's spelling is proven, an order failure is a REAL failure:
+        # one attempt, raised, never re-routed to an endpoint that answers -4120.
         svc = _service()
         bts._conditional_uses_algo[svc.base_url] = True
+        bts._algo_param_variant[svc.base_url] = 0
 
-        post = _Recorder(lambda path, p: BinanceTradingError("insufficient margin", code=-2019))
+        post = _Recorder(lambda path, p: BinanceTradingError("margin is insufficient", code=-2019))
         svc._signed_post = post
 
         with pytest.raises(BinanceTradingError):
             _run(svc._place_conditional_order(dict(STOP_PARAMS)))
-        # Only the algo endpoint was tried - a genuine error is surfaced,
-        # never silently re-routed to an endpoint that would answer -4120.
-        assert [c[0] for c in post.calls] == [ALGO_ORDER_PATH]
+        assert len(post.calls) == 1
+
+    def test_unknown_host_stops_probing_on_a_non_spelling_error(self):
+        # A host with no algo service at all answers something other than
+        # -1102: stop walking the ladder immediately and use legacy.
+        svc = _service()
+
+        def behavior(path, p):
+            if path == ALGO_ORDER_PATH:
+                return BinanceTradingError("Unknown endpoint", code=-1121)
+            return {"orderId": 4, "status": "NEW"}
+
+        post = _Recorder(behavior)
+        svc._signed_post = post
+
+        raw = _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+        assert raw["orderId"] == 4
+        # Exactly ONE algo attempt - the other spellings are pointless here.
+        assert len([c for c in post.calls if c[0] == ALGO_ORDER_PATH]) == 1
+
+    def test_falls_back_to_legacy_only_after_every_spelling_fails(self):
+        svc = _service()
+
+        def behavior(path, p):
+            if path == ALGO_ORDER_PATH:
+                return BinanceTradingError("Mandatory parameter 'x' was not sent", code=-1102)
+            return {"orderId": 3, "status": "NEW"}
+
+        post = _Recorder(behavior)
+        svc._signed_post = post
+
+        raw = _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+        assert raw["orderId"] == 3
+        algo_attempts = [c for c in post.calls if c[0] == ALGO_ORDER_PATH]
+        assert len(algo_attempts) == len(bts._ALGO_PARAM_VARIANTS)
+        assert bts._conditional_uses_algo[svc.base_url] is False
 
     def test_learned_legacy_host_skips_the_algo_probe(self):
         svc = _service()
