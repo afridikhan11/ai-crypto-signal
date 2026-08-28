@@ -79,6 +79,7 @@ import httpx
 from loguru import logger
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.services.binance_time_sync import get_time_sync
 
 
@@ -152,6 +153,13 @@ _ALGO_PARAMS = _AlgoShape("algoType", "type", "triggerPrice", "clientAlgoId")
 
 # Parameters that must never reach a log line.
 _SECRET_PARAMS = ("signature", "timestamp", "recvWindow")
+
+
+def _protective_working_type() -> str:
+    """Which price fires a protective stop - see Settings.stop_working_type.
+    Read per call rather than captured at import so a venue change needs only
+    an env edit and a restart, never a code change."""
+    return get_settings().stop_working_type
 
 
 def _is_true(value) -> bool:
@@ -418,6 +426,15 @@ class BinanceTradingService:
         else:
             await self._signed_delete("/fapi/v1/order", {"symbol": symbol.upper(), "orderId": order_id})
 
+    async def cancel_any_order(self, symbol: str, order: dict) -> None:
+        """Cancel one order row from `get_all_open_orders()` on whichever
+        service owns it. Rows read from the Algo endpoint carry `_is_algo`;
+        cancelling those on /fapi/v1/order fails, so every caller that sweeps
+        a mixed list must route rather than assume."""
+        await self.cancel_conditional_order(
+            symbol, order.get("orderId"), is_algo=bool(order.get("_is_algo"))
+        )
+
     async def cancel_all_conditional_orders(self, symbol: str) -> None:
         """Cancel every resting ALGO (conditional) order for `symbol`. Used by
         the monitor's post-resolution cleanup, which otherwise only sees plain
@@ -626,6 +643,7 @@ class BinanceTradingService:
                 "stopPrice": stop_price,
                 "quantity": qty,
                 "reduceOnly": "true",
+                "workingType": _protective_working_type(),
             }
             sl_params.update(self._client_order_id(signal_id, "S") or {})
             sl_raw = await self._place_conditional_order(sl_params)
@@ -913,6 +931,7 @@ class BinanceTradingService:
                 "stopPrice": stop_price,
                 "quantity": qty,
                 "reduceOnly": "true",
+                "workingType": _protective_working_type(),
             }
             sl_params.update(self._client_order_id(signal_id, "S") or {})
             sl_raw = await self._place_conditional_order(sl_params)
@@ -1075,11 +1094,32 @@ class BinanceTradingService:
         `/fapi/v1/openOrders` behavior - a heavier signed request than the
         per-symbol form, so only used here and not on the hot per-signal
         stop-sync path, which already knows its own symbol).
+
+        Reads BOTH services. Conditional orders (every stop) live on the Algo
+        endpoint since Binance's 2025-12-09 migration, so a legacy-only read
+        made the Control Panel's "Cancel Pending Orders" blind to exactly the
+        orders an operator reaches for that button to clear - and worse, able
+        to answer "No pending orders to cancel" while a stop was still resting.
+        Algo rows are normalised and tagged `_is_algo` so the caller can cancel
+        each on the endpoint that owns it.
         """
         params = {"symbol": symbol.upper()} if symbol else {}
-        rows = await self._signed_get("/fapi/v1/openOrders", params)
-        if not isinstance(rows, list):
-            return []
+        rows: list[dict] = []
+
+        try:
+            raw = await self._signed_get(ALGO_OPEN_ORDERS_PATH, params)
+            algo_rows = raw.get("orders", []) if isinstance(raw, dict) else raw
+            rows += [
+                self._normalise_algo_order(r)
+                for r in (algo_rows if isinstance(algo_rows, list) else [])
+            ]
+        except BinanceTradingError as exc:
+            # A venue with no algo service is not an error - the legacy read
+            # below still returns its orders.
+            logger.debug(f"Algo open-orders read unavailable: {exc}")
+
+        legacy = await self._signed_get("/fapi/v1/openOrders", params)
+        rows += legacy if isinstance(legacy, list) else []
         return rows
 
     async def replace_stop_loss(
@@ -1151,6 +1191,7 @@ class BinanceTradingService:
         new_params = {
             "symbol": symbol, "side": exit_side, "type": "STOP_MARKET",
             "stopPrice": stop_price, "quantity": qty, "reduceOnly": "true",
+            "workingType": _protective_working_type(),
         }
         new_params.update(self._stop_replacement_client_order_id(signal_id, stop_price) or {})
 

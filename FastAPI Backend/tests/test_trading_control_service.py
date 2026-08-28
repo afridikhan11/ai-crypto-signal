@@ -4,7 +4,7 @@ app.services.trading_control_service: close_all_positions, cancel_all_orders,
 kill_switch.
 
 These three functions are pure orchestration over already-tested primitives
-(`BinanceTradingService.close_position`/`.cancel_order`/`.get_all_open_orders`,
+(`BinanceTradingService.close_position`/`.cancel_any_order`/`.get_all_open_orders`,
 `BinanceAccountService.get_futures_account`) - these tests prove the
 LOOPING/aggregation/failure-isolation logic added here, not the primitives
 themselves (already covered in tests/test_binance_trading_service_stop_sync.py).
@@ -162,12 +162,13 @@ class TestCancelAllOrders:
         ]
         cancel_calls = []
 
-        async def fake_cancel_order(self, symbol, order_id):
+        async def fake_cancel_order(self, symbol, order):
+            order_id = order.get("orderId")
             cancel_calls.append((symbol, order_id))
 
         with patch.object(binance_credentials, "build_trading_service_from_saved", return_value=fake_trading_service), \
              patch.object(BinanceTradingService, "get_all_open_orders", AsyncMock(return_value=open_orders)), \
-             patch.object(BinanceTradingService, "cancel_order", fake_cancel_order), \
+             patch.object(BinanceTradingService, "cancel_any_order", fake_cancel_order), \
              patch.object(BinanceTradingService, "close", AsyncMock(return_value=None)):
             result = _run(trading_control_service.cancel_all_orders())
 
@@ -193,13 +194,14 @@ class TestCancelAllOrders:
         fake_trading_service = BinanceTradingService(api_key="k", api_secret="s", testnet=True)
         open_orders = [{"symbol": "BTCUSDT", "orderId": 111}, {"symbol": "ETHUSDT", "orderId": 222}]
 
-        async def fake_cancel_order(self, symbol, order_id):
+        async def fake_cancel_order(self, symbol, order):
+            order_id = order.get("orderId")
             if symbol == "BTCUSDT":
                 raise BinanceTradingError("simulated cancel failure")
 
         with patch.object(binance_credentials, "build_trading_service_from_saved", return_value=fake_trading_service), \
              patch.object(BinanceTradingService, "get_all_open_orders", AsyncMock(return_value=open_orders)), \
-             patch.object(BinanceTradingService, "cancel_order", fake_cancel_order), \
+             patch.object(BinanceTradingService, "cancel_any_order", fake_cancel_order), \
              patch.object(BinanceTradingService, "close", AsyncMock(return_value=None)):
             result = _run(trading_control_service.cancel_all_orders())
 
@@ -248,7 +250,8 @@ class TestKillSwitch:
         async def fake_close_position(self, symbol, position_amt):
             return _order(symbol)
 
-        async def fake_cancel_order(self, symbol, order_id):
+        async def fake_cancel_order(self, symbol, order):
+            order_id = order.get("orderId")
             return None
 
         with patch.object(trading_settings, "SETTINGS_FILE", path), \
@@ -258,7 +261,7 @@ class TestKillSwitch:
              patch.object(BinanceAccountService, "close", AsyncMock(return_value=None)), \
              patch.object(BinanceTradingService, "close_position", fake_close_position), \
              patch.object(BinanceTradingService, "get_all_open_orders", AsyncMock(return_value=open_orders)), \
-             patch.object(BinanceTradingService, "cancel_order", fake_cancel_order), \
+             patch.object(BinanceTradingService, "cancel_any_order", fake_cancel_order), \
              patch.object(BinanceTradingService, "close", AsyncMock(return_value=None)):
             result = _run(trading_control_service.kill_switch())
 

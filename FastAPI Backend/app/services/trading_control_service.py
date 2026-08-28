@@ -106,9 +106,13 @@ async def close_all_positions() -> BulkActionResult:
 async def cancel_all_orders() -> BulkActionResult:
     """
     Cancels EVERY currently-open order account-wide, reusing
-    `BinanceTradingService.get_all_open_orders()` + `.cancel_order()` - both
-    already-existing, already-tested primitives (the latter is the same
-    method `replace_stop_loss()`'s own cancel-old-stop step already uses).
+    `BinanceTradingService.get_all_open_orders()` + `.cancel_any_order()`.
+
+    Both halves matter since Binance's 2025-12-09 Algo migration: the read
+    covers the Algo service as well as /fapi/v1/openOrders, and the cancel
+    routes each row back to the endpoint that owns it. Before that, this
+    action could not see a single stop - and would report "No pending orders
+    to cancel" while a stop was still resting on the position.
     """
     try:
         trading_service = binance_credentials.build_trading_service_from_saved()
@@ -138,7 +142,9 @@ async def cancel_all_orders() -> BulkActionResult:
                 items.append(ActionItemResult(symbol=symbol, success=False, detail="Order had no orderId - skipped."))
                 continue
             try:
-                await trading_service.cancel_order(symbol, order_id)
+                # `open_orders` mixes the Algo service with /fapi/v1/openOrders,
+                # so each row must be cancelled on the endpoint that owns it.
+                await trading_service.cancel_any_order(symbol, order)
                 items.append(ActionItemResult(symbol=symbol, success=True, detail="Cancelled.", order_id=order_id))
                 logger.success(f"Cancel Pending Orders: {symbol} order #{order_id} cancelled.")
             except BinanceTradingError as exc:

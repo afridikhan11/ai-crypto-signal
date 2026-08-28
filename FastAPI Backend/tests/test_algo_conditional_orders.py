@@ -365,3 +365,115 @@ class TestConditionalCancel:
 
         _run(svc.cancel_all_conditional_orders("btcusdt"))
         assert delete.calls[0] == (ALGO_CANCEL_OPEN_ORDERS_PATH, {"symbol": "BTCUSDT"})
+
+
+# ======================================================================
+# Protective stops trigger on MARK price, not the last trade
+#
+# Binance defaults an unspecified workingType to CONTRACT_PRICE (last traded
+# price), which one thin print can move. On a shallow book that fires a stop
+# the real market never reached and books the full planned loss for nothing.
+# ======================================================================
+class TestProtectiveStopWorkingType:
+    def _svc(self):
+        svc = _service()
+        post = _Recorder(lambda path, p: {"orderId": 1, "algoId": 1, "status": "NEW", "avgPrice": "100"})
+        svc._signed_post = post
+        svc._get_symbol_filters = _filters
+        return svc, post
+
+    def _stop_payload(self, post):
+        return next(
+            p for _, p in post.calls
+            if p.get("type") == "STOP_MARKET" and _is_true_str(p.get("reduceOnly"))
+        )
+
+    def test_bracket_stop_uses_mark_price(self):
+        svc, post = self._svc()
+        _run(svc.place_signal_bracket(
+            symbol="BTCUSDT", direction="SHORT", quantity=1.0,
+            stop_loss=105.0, take_profit=90.0, entry_price=100.0, signal_id="sig-abc",
+        ))
+        assert self._stop_payload(post)["workingType"] == "MARK_PRICE"
+
+    def test_replacement_stop_uses_mark_price(self):
+        svc, post = self._svc()
+        svc.get_open_stop_orders = lambda symbol: _noop_list()
+        svc.cancel_conditional_order = lambda *a, **k: _noop_none()
+        _run(svc.replace_stop_loss(
+            symbol="BTCUSDT", direction="SHORT", quantity=1.0,
+            new_stop_price=104.0, signal_id="sig-abc",
+        ))
+        assert self._stop_payload(post)["workingType"] == "MARK_PRICE"
+
+    def test_stop_market_ENTRY_still_uses_the_traded_price(self):
+        # An entry trigger means "price genuinely traded through this level",
+        # so CONTRACT_PRICE is correct there and must not be swept along.
+        svc, post = self._svc()
+        _run(svc.place_stop_market_entry("BTCUSDT", "SHORT", 1.0, 95.0, signal_id="sig-abc"))
+        entry = next(p for _, p in post.calls if p.get("type") == "STOP_MARKET")
+        assert entry["workingType"] == "CONTRACT_PRICE"
+        assert "reduceOnly" not in entry
+
+
+async def _noop_list():
+    return []
+
+
+async def _noop_none():
+    return None
+
+
+def _is_true_str(v):
+    return v in (True, "true", "True")
+
+
+# ======================================================================
+# "Cancel Pending Orders" must be able to SEE a stop
+#
+# Stops live on the Algo service since 2025-12-09. A legacy-only read left
+# the Control Panel's emergency button blind to exactly the orders an
+# operator reaches for it to clear.
+# ======================================================================
+class TestGetAllOpenOrdersSpansBothServices:
+    def _svc(self, algo_rows, legacy_rows):
+        svc = _service()
+
+        async def fake_get(path, params=None):
+            if path == ALGO_OPEN_ORDERS_PATH:
+                if isinstance(algo_rows, Exception):
+                    raise algo_rows
+                return algo_rows
+            return legacy_rows
+
+        svc._signed_get = fake_get
+        return svc
+
+    def test_returns_algo_and_legacy_rows_together(self):
+        svc = self._svc(
+            algo_rows={"orders": [{"algoId": 9, "orderType": "STOP_MARKET", "symbol": "BTCUSDT"}]},
+            legacy_rows=[{"orderId": 4, "type": "LIMIT", "symbol": "BTCUSDT"}],
+        )
+        rows = _run(svc.get_all_open_orders())
+        assert sorted(r["orderId"] for r in rows) == [4, 9]
+        # The algo row is tagged so the caller can cancel it correctly.
+        assert next(r for r in rows if r["orderId"] == 9)["_is_algo"] is True
+        assert next(r for r in rows if r["orderId"] == 4).get("_is_algo") is None
+
+    def test_a_venue_without_the_algo_service_still_returns_legacy_orders(self):
+        svc = self._svc(
+            algo_rows=BinanceTradingError("no algo service", code=-1121),
+            legacy_rows=[{"orderId": 4, "type": "LIMIT", "symbol": "BTCUSDT"}],
+        )
+        assert [r["orderId"] for r in _run(svc.get_all_open_orders())] == [4]
+
+    def test_cancel_any_order_routes_by_owner(self):
+        svc = _service()
+        delete = _Recorder(lambda path, p: {})
+        svc._signed_delete = delete
+
+        _run(svc.cancel_any_order("BTCUSDT", {"orderId": 9, "_is_algo": True}))
+        _run(svc.cancel_any_order("BTCUSDT", {"orderId": 4}))
+
+        assert delete.calls[0] == (ALGO_ORDER_PATH, {"symbol": "BTCUSDT", "algoId": 9})
+        assert delete.calls[1] == ("/fapi/v1/order", {"symbol": "BTCUSDT", "orderId": 4})

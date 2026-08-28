@@ -701,9 +701,10 @@ class SignalMonitor:
             # Binance already auto-cancelled them against a flat position.
             try:
                 for order in await trading_service.get_all_open_orders(symbol):
-                    oid = order.get("orderId")
-                    if oid is not None:
-                        await trading_service.cancel_order(symbol, oid)
+                    if order.get("orderId") is not None:
+                        # The list mixes both services - cancel_any_order routes
+                        # each row to the endpoint that owns it.
+                        await trading_service.cancel_any_order(symbol, order)
             except BinanceTradingError as exc:
                 logger.warning(f"{symbol}: could not clean up resting orders after {status_label}: {exc}")
             # Conditional (algo) stops live on a separate service and never

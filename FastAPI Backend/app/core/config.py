@@ -118,6 +118,17 @@ class Settings(BaseSettings):
     # new placements until one closes: yesterday's open trades consume
     # today's allowance. 0 disables.
     max_open_positions: int = Field(default=3, alias="MAX_OPEN_POSITIONS")
+    # WHICH PRICE TRIGGERS A PROTECTIVE STOP (2026-08-28). Binance defaults an
+    # unspecified workingType to CONTRACT_PRICE - the LAST TRADED price - which
+    # a single thin print can move. On a shallow book one wick then fires a
+    # stop the real market never reached, booking the full planned loss for
+    # nothing. MARK_PRICE is derived from an index across venues, is what
+    # Binance itself liquidates on, and is the standard choice for protective
+    # orders, so it is the default here.
+    # This deliberately does NOT apply to a STOP_MARKET *entry*
+    # (`place_stop_market_entry`), where the point is that price genuinely
+    # TRADED through the level - that one keeps CONTRACT_PRICE.
+    stop_working_type: str = Field(default="MARK_PRICE", alias="STOP_WORKING_TYPE")
     # PER-POSITION NOTIONAL CAP (2026-08-25): risk-based sizing with a tight
     # structural stop produces a huge position (FIL ran ~2x equity on a ~0.5%
     # stop), and on tight stops EXECUTION cost becomes the real risk - the
