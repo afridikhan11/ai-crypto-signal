@@ -50,6 +50,10 @@ def _service():
     return BinanceTradingService(api_key="k", api_secret="s", testnet=True)
 
 
+async def _filters(symbol):
+    return {"step_size": 0.001, "tick_size": 0.01, "min_notional": 5.0}
+
+
 class _Recorder:
     """Stands in for the signed POST/GET/DELETE helpers."""
 
@@ -228,6 +232,53 @@ class TestConditionalRouting:
 
         _run(svc._place_conditional_order(dict(STOP_PARAMS)))
         assert [c[0] for c in post.calls] == ["/fapi/v1/order"]
+
+
+# ======================================================================
+# Only TRIGGER orders may touch the conditional router
+#
+# This is the regression that actually disarmed every stop in production.
+# `place_limit_entry` sent a plain GTC LIMIT through
+# `_place_conditional_order`. The Algo API refused it (a LIMIT has no
+# trigger price), the legacy fallback succeeded, and that success recorded
+# `_conditional_uses_algo[host] = False` - so every REAL stop afterwards
+# skipped the Algo endpoint and went to /fapi/v1/order, which answers -4120.
+# ONE pending entry per process was enough to leave every later position
+# with no exchange stop at all.
+# ======================================================================
+class TestOnlyTriggerOrdersUseTheAlgoRouter:
+    def _svc_recording(self):
+        svc = _service()
+        post = _Recorder(lambda path, p: {"orderId": 11, "status": "NEW"})
+        svc._signed_post = post
+        svc._get_symbol_filters = _filters
+        return svc, post
+
+    def test_limit_entry_never_touches_the_algo_endpoint(self):
+        svc, post = self._svc_recording()
+        _run(svc.place_limit_entry("BTCUSDT", "SHORT", 0.01, 50_000.0, signal_id="sig-abc"))
+        assert [c[0] for c in post.calls] == ["/fapi/v1/order"]
+        sent = post.calls[0][1]
+        assert sent["type"] == "LIMIT" and "algoType" not in sent
+
+    def test_limit_entry_does_not_poison_stop_routing(self):
+        # The whole bug in one assertion: after a pending entry, a stop must
+        # still be offered to the Algo API.
+        svc, post = self._svc_recording()
+        _run(svc.place_limit_entry("BTCUSDT", "SHORT", 0.01, 50_000.0, signal_id="sig-abc"))
+        assert svc.base_url not in bts._conditional_uses_algo
+
+        post.calls.clear()
+        _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+        assert post.calls[0][0] == ALGO_ORDER_PATH
+
+    def test_stop_market_entry_does_use_the_algo_endpoint(self):
+        # It opens a position rather than closing one, but it is still a
+        # trigger order, so /fapi/v1/order would answer -4120.
+        svc, post = self._svc_recording()
+        _run(svc.place_stop_market_entry("BTCUSDT", "SHORT", 0.01, 50_000.0, signal_id="sig-abc"))
+        assert post.calls[0][0] == ALGO_ORDER_PATH
+        assert post.calls[0][1]["algoType"] == "CONDITIONAL"
 
 
 # ======================================================================

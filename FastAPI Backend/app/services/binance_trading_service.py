@@ -739,7 +739,16 @@ class BinanceTradingService:
             "timeInForce": "GTC",
         }
         params.update(self._client_order_id(signal_id, "E") or {})
-        raw = await self._place_conditional_order(params)
+        # A plain GTC LIMIT is NOT a conditional order - it carries no trigger
+        # price and belongs on /fapi/v1/order. Routing it through
+        # `_place_conditional_order` was the reason exchange stops never got
+        # placed: the Algo API rightly refused a LIMIT, the legacy fallback
+        # succeeded, and that success recorded `_conditional_uses_algo=False`
+        # for the whole host. Every REAL stop after it then skipped the Algo
+        # endpoint entirely and went straight to /fapi/v1/order, where a
+        # STOP_MARKET answers -4120. One pending entry per process was enough
+        # to disarm every stop that followed it.
+        raw = await self._signed_post("/fapi/v1/order", params)
         logger.info(
             f"{symbol}: ICT pending LIMIT entry placed | {direction} | qty={qty} @ {limit_price} "
             f"| order {raw['orderId']}"
@@ -840,7 +849,10 @@ class BinanceTradingService:
             # NOT reduceOnly - this order OPENS the position.
         }
         params.update(self._client_order_id(signal_id, "E") or {})
-        raw = await self._signed_post("/fapi/v1/order", params)
+        # A STOP_MARKET genuinely IS conditional, even though this one OPENS a
+        # position rather than closing one, so it belongs on the Algo API like
+        # every other trigger order - /fapi/v1/order answers -4120 for it.
+        raw = await self._place_conditional_order(params)
         logger.info(
             f"{symbol}: STOP-MARKET entry placed | {direction} | qty={qty} trigger @ {trigger_price} "
             f"| order {raw['orderId']}"
