@@ -70,29 +70,40 @@ class _Recorder:
 # Param translation
 # ======================================================================
 class TestAlgoParamTranslation:
-    def test_default_payload_keeps_legacy_spellings(self):
-        # The live service demanded `type` (-1102) even though its responses
-        # carry `orderType`, so the default payload changes nothing but adds
-        # algoType.
+    def test_default_shape_sends_both_type_and_ordertype(self):
+        # The live service rejected a payload missing `type` (-1102) AND one
+        # missing `orderType` (-1116), so it wants both: `type` carries the
+        # ALGO type, `orderType` the order type.
         algo = BinanceTradingService._to_algo_params(STOP_PARAMS)
-        assert algo["algoType"] == "CONDITIONAL"
-        assert algo["type"] == "STOP_MARKET"
+        assert algo["type"] == "CONDITIONAL"
+        assert algo["orderType"] == "STOP_MARKET"
         assert algo["stopPrice"] == 102.5
         assert algo["newClientOrderId"] == "sig-abc-S"
+        # The order itself is unchanged.
         assert algo["symbol"] == "BTCUSDT" and algo["side"] == "BUY"
         assert algo["quantity"] == 0.01 and algo["reduceOnly"] == "true"
 
-    def test_renames_apply_when_a_host_needs_them(self):
-        algo = BinanceTradingService._to_algo_params(
-            STOP_PARAMS, {"stopPrice": "triggerPrice", "newClientOrderId": "clientAlgoId"}
-        )
+    def test_alternate_shapes_rename_trigger_and_client_id(self):
+        algo = BinanceTradingService._to_algo_params(STOP_PARAMS, bts._ALGO_PARAM_VARIANTS[1])
+        assert algo["type"] == "CONDITIONAL" and algo["orderType"] == "STOP_MARKET"
         assert algo["triggerPrice"] == 102.5 and "stopPrice" not in algo
         assert algo["clientAlgoId"] == "sig-abc-S" and "newClientOrderId" not in algo
-        assert algo["type"] == "STOP_MARKET"      # untouched by these renames
+
+    def test_legacy_shape_puts_the_order_type_in_type(self):
+        algo = BinanceTradingService._to_algo_params(STOP_PARAMS, bts._ALGO_PARAM_VARIANTS[2])
+        assert algo["algoType"] == "CONDITIONAL"
+        assert algo["type"] == "STOP_MARKET"
+
+    def test_every_shape_carries_an_algo_type_and_an_order_type(self):
+        for shape in bts._ALGO_PARAM_VARIANTS:
+            algo = BinanceTradingService._to_algo_params(STOP_PARAMS, shape)
+            assert algo[shape.algo_field] == "CONDITIONAL"
+            assert algo[shape.order_field] == "STOP_MARKET"
+            assert algo[shape.trigger_field] == 102.5
 
     def test_does_not_mutate_the_caller_dict(self):
         before = dict(STOP_PARAMS)
-        BinanceTradingService._to_algo_params(STOP_PARAMS, {"stopPrice": "triggerPrice"})
+        BinanceTradingService._to_algo_params(STOP_PARAMS, bts._ALGO_PARAM_VARIANTS[1])
         assert STOP_PARAMS == before
 
     def test_normalise_exposes_orderid_and_stopprice(self):
@@ -117,7 +128,9 @@ class TestConditionalRouting:
         raw = _run(svc._place_conditional_order(dict(STOP_PARAMS)))
         assert raw["orderId"] == 42 and raw["_is_algo"] is True
         assert post.calls[0][0] == ALGO_ORDER_PATH
-        assert post.calls[0][1]["algoType"] == "CONDITIONAL"
+        sent = post.calls[0][1]
+        assert sent["type"] == "CONDITIONAL"        # leading shape: algo type in `type`
+        assert sent["orderType"] == "STOP_MARKET"
 
     def test_falls_back_to_legacy_when_algo_rejects(self):
         svc = _service()
@@ -144,9 +157,8 @@ class TestConditionalRouting:
 
         def behavior(path, p):
             if "triggerPrice" not in p:
-                return BinanceTradingError(
-                    "Mandatory parameter 'triggerPrice' was not sent", code=-1102
-                )
+                # Exactly what demo-fapi did: reject the shape, naming a field.
+                return BinanceTradingError("Invalid orderType.", code=-1116)
             return {"algoId": 55, "algoStatus": "NEW"}
 
         post = _Recorder(behavior)

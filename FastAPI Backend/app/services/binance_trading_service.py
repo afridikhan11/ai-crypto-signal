@@ -71,6 +71,7 @@ import hmac
 import math
 import os
 import time
+from collections import namedtuple
 from typing import Dict, Optional
 from urllib.parse import urlencode
 
@@ -116,20 +117,30 @@ ALGO_CANCEL_OPEN_ORDERS_PATH = "/fapi/v1/algoOpenOrders"
 # because a service instance is short-lived (built per call).
 _conditional_uses_algo: Dict[str, bool] = {}
 
-# The Algo service's REQUEST spelling differs from the fields it returns, and
-# is not consistently documented. demo-fapi answered our first attempt with
-#   -1102 "Mandatory parameter 'type' was not sent"
-# even though responses carry `orderType` - i.e. the request wants the LEGACY
-# `type`. Because a wrong guess costs a live stop, try a short ordered ladder
-# of spellings and remember the one THIS host accepts. Only -1102 (missing or
-# malformed parameter) advances the ladder; every other error is a genuine
-# order failure and is raised immediately.
+# The Algo service's REQUEST spelling differs from the fields it returns and is
+# not documented consistently, so it was learned from the live service itself.
+# demo-fapi rejected two shapes with two different codes, each naming the field
+# it wanted next:
+#   sent algoType + orderType, no `type` -> -1102 "Mandatory parameter 'type'
+#                                            was not sent"
+#   sent algoType + type, no `orderType` -> -1116 "Invalid orderType"
+# Read together those say it wants BOTH fields: `type` carrying the ALGO type
+# (CONDITIONAL) and `orderType` carrying the order type (STOP_MARKET). That
+# shape leads the ladder; the others are kept for venues that differ.
+#
+# A wrong guess costs a live stop, so rather than betting on one spelling the
+# ladder is walked until the service stops calling the payload malformed, and
+# the winning shape is remembered per host - walked once per venue, never once
+# per order.
+_AlgoShape = namedtuple("_AlgoShape", "algo_field order_field trigger_field client_field")
 _ALGO_PARAM_VARIANTS = (
-    {},                                                       # legacy names + algoType
-    {"stopPrice": "triggerPrice"},                            # trigger renamed
-    {"stopPrice": "triggerPrice", "newClientOrderId": "clientAlgoId"},
+    _AlgoShape("type", "orderType", "stopPrice", "newClientOrderId"),
+    _AlgoShape("type", "orderType", "triggerPrice", "clientAlgoId"),
+    _AlgoShape("algoType", "type", "stopPrice", "newClientOrderId"),
+    _AlgoShape("algoType", "orderType", "triggerPrice", "clientAlgoId"),
 )
-_MALFORMED_PARAM_CODE = -1102
+# Codes that mean "this payload's shape is wrong", not "this order is bad".
+_PAYLOAD_SHAPE_CODES = (-1102, -1116)
 
 # Which entry of the ladder above a host accepted, per base_url.
 _algo_param_variant: Dict[str, int] = {}
@@ -310,19 +321,20 @@ class BinanceTradingService:
     # Conditional orders - see the ALGO_* constants' comment above.
     # ------------------------------------------------------------------
     @staticmethod
-    def _to_algo_params(params: dict, renames: Optional[dict] = None) -> dict:
-        """Build the Algo API payload for a conditional order.
-
-        The order ITSELF is unchanged - only `algoType=CONDITIONAL` is added,
-        plus whatever field renames this host turned out to need (see
-        _ALGO_PARAM_VARIANTS). Keeping the legacy spellings by default is
-        deliberate: the live service demanded `type`, not the `orderType` its
-        own responses carry."""
+    def _to_algo_params(params: dict, shape: Optional["_AlgoShape"] = None) -> dict:
+        """Build the Algo API payload for a conditional order, in `shape`'s
+        spelling (see _ALGO_PARAM_VARIANTS). The ORDER itself is untouched -
+        only how the algo type, order type, trigger price and client id are
+        named changes."""
+        shape = shape or _ALGO_PARAM_VARIANTS[0]
         algo = dict(params)
-        algo["algoType"] = "CONDITIONAL"
-        for old, new in (renames or {}).items():
-            if old in algo:
-                algo[new] = algo.pop(old)
+        order_type = algo.pop("type")
+        algo[shape.algo_field] = "CONDITIONAL"
+        algo[shape.order_field] = order_type
+        if shape.trigger_field != "stopPrice" and "stopPrice" in algo:
+            algo[shape.trigger_field] = algo.pop("stopPrice")
+        if shape.client_field != "newClientOrderId" and "newClientOrderId" in algo:
+            algo[shape.client_field] = algo.pop("newClientOrderId")
         return algo
 
     @staticmethod
@@ -380,7 +392,7 @@ class BinanceTradingService:
                         # to an endpoint that would answer -4120.
                         raise
                     last_error = exc
-                    if exc.code != _MALFORMED_PARAM_CODE:
+                    if exc.code not in _PAYLOAD_SHAPE_CODES:
                         # Not a spelling problem - this host probably has no
                         # algo service at all. Stop probing and try legacy.
                         break
