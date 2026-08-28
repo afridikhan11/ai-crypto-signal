@@ -130,23 +130,28 @@ _conditional_uses_algo: Dict[str, bool] = {}
 # request; the trigger-price and client-id spellings are not, and demo-fapi
 # rejected `stopPrice` with -1116.
 #
-# Rather than bet on one spelling for a payload that carries a live stop, the
-# ladder below is walked until the service stops calling the payload
-# malformed, and the accepted shape is remembered per host - walked once per
-# venue, never once per order. It leads with the documented algoType/type pair
-# and the response's own trigger/client naming.
+# THERE IS EXACTLY ONE SHAPE, and it is the documented one. An earlier version
+# of this module walked a ladder of four guessed spellings until one stopped
+# being rejected. That was a mistake twice over:
+#
+#   1. Three of the four sent parameters that do not exist on the Algo API at
+#      all (`stopPrice`, `orderType`, `newClientOrderId`), so they could never
+#      have succeeded - they were dead weight sending three doomed orders.
+#   2. Far worse, the ladder DESTROYED THE EVIDENCE. Each attempt overwrote
+#      `last_error`, so the only thing that ever reached the log was the LAST
+#      variant's complaint. On 2026-08-28 that surfaced as "Mandatory parameter
+#      'algotype' was not sent" - which is simply what variant #4 deserved for
+#      omitting `algoType`, and told us nothing whatsoever about why the real,
+#      documented payload was refused.
+#
+# So: one shape, one request, and on failure the exact payload we sent is
+# logged next to Binance's exact answer. A stop order is not a thing to guess
+# at - when it is refused we need to be able to read why.
 _AlgoShape = namedtuple("_AlgoShape", "algo_field order_field trigger_field client_field")
-_ALGO_PARAM_VARIANTS = (
-    _AlgoShape("algoType", "type", "triggerPrice", "clientAlgoId"),
-    _AlgoShape("algoType", "type", "triggerPrice", "newClientOrderId"),
-    _AlgoShape("algoType", "type", "stopPrice", "newClientOrderId"),
-    _AlgoShape("type", "orderType", "triggerPrice", "clientAlgoId"),
-)
-# Codes that mean "this payload's shape is wrong", not "this order is bad".
-_PAYLOAD_SHAPE_CODES = (-1102, -1116)
+_ALGO_PARAMS = _AlgoShape("algoType", "type", "triggerPrice", "clientAlgoId")
 
-# Which entry of the ladder above a host accepted, per base_url.
-_algo_param_variant: Dict[str, int] = {}
+# Parameters that must never reach a log line.
+_SECRET_PARAMS = ("signature", "timestamp", "recvWindow")
 
 
 def _is_true(value) -> bool:
@@ -326,10 +331,10 @@ class BinanceTradingService:
     @staticmethod
     def _to_algo_params(params: dict, shape: Optional["_AlgoShape"] = None) -> dict:
         """Build the Algo API payload for a conditional order, in `shape`'s
-        spelling (see _ALGO_PARAM_VARIANTS). The ORDER itself is untouched -
-        only how the algo type, order type, trigger price and client id are
-        named changes."""
-        shape = shape or _ALGO_PARAM_VARIANTS[0]
+        spelling (see _ALGO_PARAMS). The ORDER itself is untouched - only how
+        the algo type, order type, trigger price and client id are named
+        changes."""
+        shape = shape or _ALGO_PARAMS
         algo = dict(params)
         order_type = algo.pop("type")
         algo[shape.algo_field] = "CONDITIONAL"
@@ -369,46 +374,42 @@ class BinanceTradingService:
         prefers_algo = _conditional_uses_algo.get(self.base_url)
 
         if prefers_algo is not False:
-            known = _algo_param_variant.get(self.base_url)
-            # A host with a proven spelling uses only that one; an unknown host
-            # walks the ladder until the service stops calling the payload
-            # malformed.
-            indices = [known] if known is not None else range(len(_ALGO_PARAM_VARIANTS))
-            last_error: Optional[BinanceTradingError] = None
-            for index in indices:
-                try:
-                    raw = await self._signed_post(
-                        ALGO_ORDER_PATH, self._to_algo_params(params, _ALGO_PARAM_VARIANTS[index])
+            proven = prefers_algo is True
+            algo_params = self._to_algo_params(params)
+            try:
+                raw = await self._signed_post(ALGO_ORDER_PATH, algo_params)
+                if not proven:
+                    _conditional_uses_algo[self.base_url] = True
+                    logger.success(
+                        f"Conditional orders on {self.base_url} routed to the Algo Order API "
+                        f"({ALGO_ORDER_PATH}) - exchange-native stops are active."
                     )
-                    if known is None:
-                        _conditional_uses_algo[self.base_url] = True
-                        _algo_param_variant[self.base_url] = index
-                        logger.success(
-                            f"Conditional orders on {self.base_url} routed to the Algo Order API "
-                            f"({ALGO_ORDER_PATH}, param set #{index}) - exchange-native stops are active."
-                        )
-                    return self._normalise_algo_order(raw)
-                except BinanceTradingError as exc:
-                    if known is not None:
-                        # This host's spelling is proven, so this is a genuine
-                        # order failure - surface it, never silently re-route
-                        # to an endpoint that would answer -4120.
-                        raise
-                    last_error = exc
-                    if exc.code not in _PAYLOAD_SHAPE_CODES:
-                        # Not a spelling problem - this host probably has no
-                        # algo service at all. Stop probing and try legacy.
-                        break
-                    # Wrong spelling for this host: try the next one.
-
-            logger.warning(
-                f"Algo Order API unusable on {self.base_url} ({last_error}); "
-                f"falling back to the legacy /fapi/v1/order endpoint once."
-            )
+                return self._normalise_algo_order(raw)
+            except BinanceTradingError as exc:
+                if proven:
+                    # This host has already served an algo order, so this is a
+                    # genuine order failure - surface it, never silently
+                    # re-route to an endpoint that would answer -4120.
+                    raise
+                # First refusal on this host. Log EXACTLY what we sent beside
+                # exactly what Binance answered: without both halves the next
+                # step is guesswork, and this payload carries a stop-loss.
+                logger.warning(
+                    f"Algo Order API refused the documented payload on {self.base_url} "
+                    f"(code={exc.code}): {exc}\n"
+                    f"  sent to {ALGO_ORDER_PATH}: {self._loggable(algo_params)}\n"
+                    f"  falling back to the legacy /fapi/v1/order endpoint once."
+                )
 
         raw = await self._signed_post("/fapi/v1/order", params)
         _conditional_uses_algo[self.base_url] = False
         return raw
+
+    @staticmethod
+    def _loggable(params: dict) -> dict:
+        """The request payload with the credential-bearing fields dropped, so a
+        failed order can be diagnosed from the log without leaking anything."""
+        return {k: v for k, v in params.items() if k not in _SECRET_PARAMS}
 
     async def cancel_conditional_order(self, symbol: str, order_id, is_algo: bool = False) -> None:
         """Cancel one conditional order on the endpoint that owns it."""
