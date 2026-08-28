@@ -70,29 +70,32 @@ class _Recorder:
 # Param translation
 # ======================================================================
 class TestAlgoParamTranslation:
-    def test_default_shape_sends_both_type_and_ordertype(self):
-        # The live service rejected a payload missing `type` (-1102) AND one
-        # missing `orderType` (-1116), so it wants both: `type` carries the
-        # ALGO type, `orderType` the order type.
+    def test_default_shape_matches_binances_own_curl_example(self):
+        # Binance documents `--data algoType=CONDITIONAL --data type=STOP_MARKET`
+        # for POST /fapi/v1/algoOrder, even though the RESPONSE calls the order
+        # type `orderType`. The leading shape follows the documented request.
         algo = BinanceTradingService._to_algo_params(STOP_PARAMS)
-        assert algo["type"] == "CONDITIONAL"
-        assert algo["orderType"] == "STOP_MARKET"
-        assert algo["stopPrice"] == 102.5
-        assert algo["newClientOrderId"] == "sig-abc-S"
+        assert algo["algoType"] == "CONDITIONAL"
+        assert algo["type"] == "STOP_MARKET"
+        assert algo["triggerPrice"] == 102.5
+        assert algo["clientAlgoId"] == "sig-abc-S"
         # The order itself is unchanged.
         assert algo["symbol"] == "BTCUSDT" and algo["side"] == "BUY"
         assert algo["quantity"] == 0.01 and algo["reduceOnly"] == "true"
 
-    def test_alternate_shapes_rename_trigger_and_client_id(self):
-        algo = BinanceTradingService._to_algo_params(STOP_PARAMS, bts._ALGO_PARAM_VARIANTS[1])
-        assert algo["type"] == "CONDITIONAL" and algo["orderType"] == "STOP_MARKET"
-        assert algo["triggerPrice"] == 102.5 and "stopPrice" not in algo
-        assert algo["clientAlgoId"] == "sig-abc-S" and "newClientOrderId" not in algo
+    def test_documented_pair_leads_every_early_shape(self):
+        # demo-fapi already proved -1102 (no `type`) and -1116 (`stopPrice`),
+        # so every shape ahead of the last fallback keeps the documented
+        # algoType/type pair and only varies the undocumented names.
+        for shape in bts._ALGO_PARAM_VARIANTS[:3]:
+            algo = BinanceTradingService._to_algo_params(STOP_PARAMS, shape)
+            assert algo["algoType"] == "CONDITIONAL"
+            assert algo["type"] == "STOP_MARKET"
 
-    def test_legacy_shape_puts_the_order_type_in_type(self):
-        algo = BinanceTradingService._to_algo_params(STOP_PARAMS, bts._ALGO_PARAM_VARIANTS[2])
-        assert algo["algoType"] == "CONDITIONAL"
-        assert algo["type"] == "STOP_MARKET"
+    def test_last_fallback_swaps_the_pair_for_odd_venues(self):
+        algo = BinanceTradingService._to_algo_params(STOP_PARAMS, bts._ALGO_PARAM_VARIANTS[-1])
+        assert algo["type"] == "CONDITIONAL"
+        assert algo["orderType"] == "STOP_MARKET"
 
     def test_every_shape_carries_an_algo_type_and_an_order_type(self):
         for shape in bts._ALGO_PARAM_VARIANTS:
@@ -129,8 +132,8 @@ class TestConditionalRouting:
         assert raw["orderId"] == 42 and raw["_is_algo"] is True
         assert post.calls[0][0] == ALGO_ORDER_PATH
         sent = post.calls[0][1]
-        assert sent["type"] == "CONDITIONAL"        # leading shape: algo type in `type`
-        assert sent["orderType"] == "STOP_MARKET"
+        assert sent["algoType"] == "CONDITIONAL"    # documented request spelling
+        assert sent["type"] == "STOP_MARKET"
 
     def test_falls_back_to_legacy_when_algo_rejects(self):
         svc = _service()
@@ -156,7 +159,7 @@ class TestConditionalRouting:
         svc = _service()
 
         def behavior(path, p):
-            if "triggerPrice" not in p:
+            if "clientAlgoId" in p:
                 # Exactly what demo-fapi did: reject the shape, naming a field.
                 return BinanceTradingError("Invalid orderType.", code=-1116)
             return {"algoId": 55, "algoStatus": "NEW"}
@@ -172,7 +175,7 @@ class TestConditionalRouting:
         post.calls.clear()
         _run(svc._place_conditional_order(dict(STOP_PARAMS)))
         assert len(post.calls) == 1                       # straight to the proven spelling
-        assert "triggerPrice" in post.calls[0][1]
+        assert "newClientOrderId" in post.calls[0][1]
 
     def test_proven_host_raises_a_real_error_without_probing(self):
         # Once a host's spelling is proven, an order failure is a REAL failure:

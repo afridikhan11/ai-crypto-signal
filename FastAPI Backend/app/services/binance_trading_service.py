@@ -117,27 +117,30 @@ ALGO_CANCEL_OPEN_ORDERS_PATH = "/fapi/v1/algoOpenOrders"
 # because a service instance is short-lived (built per call).
 _conditional_uses_algo: Dict[str, bool] = {}
 
-# The Algo service's REQUEST spelling differs from the fields it returns and is
-# not documented consistently, so it was learned from the live service itself.
-# demo-fapi rejected two shapes with two different codes, each naming the field
-# it wanted next:
-#   sent algoType + orderType, no `type` -> -1102 "Mandatory parameter 'type'
-#                                            was not sent"
-#   sent algoType + type, no `orderType` -> -1116 "Invalid orderType"
-# Read together those say it wants BOTH fields: `type` carrying the ALGO type
-# (CONDITIONAL) and `orderType` carrying the order type (STOP_MARKET). That
-# shape leads the ladder; the others are kept for venues that differ.
+# The Algo service's REQUEST spelling differs from the fields its RESPONSE
+# carries, which is what made this hard to get right. Binance's own cURL
+# example for POST /fapi/v1/algoOrder settles the two key fields:
 #
-# A wrong guess costs a live stop, so rather than betting on one spelling the
-# ladder is walked until the service stops calling the payload malformed, and
-# the winning shape is remembered per host - walked once per venue, never once
-# per order.
+#     --data algoType=CONDITIONAL      <- the ALGO type
+#     --data type=STOP_MARKET          <- the ORDER type
+#
+# ...while the response for the same order comes back with `orderType`,
+# `triggerPrice` and `clientAlgoId`. So request and response genuinely use
+# different names, and only `algoType` + `type` are documented for the
+# request; the trigger-price and client-id spellings are not, and demo-fapi
+# rejected `stopPrice` with -1116.
+#
+# Rather than bet on one spelling for a payload that carries a live stop, the
+# ladder below is walked until the service stops calling the payload
+# malformed, and the accepted shape is remembered per host - walked once per
+# venue, never once per order. It leads with the documented algoType/type pair
+# and the response's own trigger/client naming.
 _AlgoShape = namedtuple("_AlgoShape", "algo_field order_field trigger_field client_field")
 _ALGO_PARAM_VARIANTS = (
-    _AlgoShape("type", "orderType", "stopPrice", "newClientOrderId"),
-    _AlgoShape("type", "orderType", "triggerPrice", "clientAlgoId"),
+    _AlgoShape("algoType", "type", "triggerPrice", "clientAlgoId"),
+    _AlgoShape("algoType", "type", "triggerPrice", "newClientOrderId"),
     _AlgoShape("algoType", "type", "stopPrice", "newClientOrderId"),
-    _AlgoShape("algoType", "orderType", "triggerPrice", "clientAlgoId"),
+    _AlgoShape("type", "orderType", "triggerPrice", "clientAlgoId"),
 )
 # Codes that mean "this payload's shape is wrong", not "this order is bad".
 _PAYLOAD_SHAPE_CODES = (-1102, -1116)
