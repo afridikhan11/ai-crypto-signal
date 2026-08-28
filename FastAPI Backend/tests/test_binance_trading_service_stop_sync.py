@@ -137,16 +137,33 @@ class TestReplaceStopLossOrdering:
         assert result.success is False
         assert placed["called"] is False
 
-    def test_zero_quantity_refuses_without_touching_anything(self):
+    def test_zero_quantity_refuses_only_when_the_stop_is_a_SIZED_one(self):
+        """A sized reduceOnly stop with no quantity would protect nothing, so
+        it is refused. A closePosition stop names no quantity at all - and a
+        residual too small to round to a step is exactly the dust it exists to
+        flatten - so refusing there would strand it (task #12)."""
+        from app.services import binance_trading_service as bts
+
         svc = _service()
 
         async def fake_filters_tiny_step(symbol):
             return {"step_size": 1.0, "tick_size": 0.01, "min_notional": 5.0}
 
         svc._get_symbol_filters = fake_filters_tiny_step
-        result = _run(svc.replace_stop_loss("BTCUSDT", "LONG", 0.0004, 95.0, signal_id="sig-1"))
+
+        class _Sized:
+            stop_close_position = False
+            stop_working_type = "MARK_PRICE"
+
+        original = bts.get_settings
+        bts.get_settings = lambda: _Sized()
+        try:
+            result = _run(svc.replace_stop_loss("BTCUSDT", "LONG", 0.0004, 95.0, signal_id="sig-1"))
+        finally:
+            bts.get_settings = original
 
         assert result.success is False
+        assert "rounds down to 0" in (result.warning or "")
 
 
 class TestExchangeTimeoutAndRetry:

@@ -383,9 +383,12 @@ class TestProtectiveStopWorkingType:
         return svc, post
 
     def _stop_payload(self, post):
+        """The PROTECTIVE stop - it closes, so it carries closePosition or
+        reduceOnly. An entry trigger carries neither."""
         return next(
             p for _, p in post.calls
-            if p.get("type") == "STOP_MARKET" and _is_true_str(p.get("reduceOnly"))
+            if p.get("type") == "STOP_MARKET"
+            and (_is_true_str(p.get("closePosition")) or _is_true_str(p.get("reduceOnly")))
         )
 
     def test_bracket_stop_uses_mark_price(self):
@@ -477,3 +480,84 @@ class TestGetAllOpenOrdersSpansBothServices:
 
         assert delete.calls[0] == (ALGO_ORDER_PATH, {"symbol": "BTCUSDT", "algoId": 9})
         assert delete.calls[1] == ("/fapi/v1/order", {"symbol": "BTCUSDT", "orderId": 4})
+
+
+# ======================================================================
+# Whole-position stops (closePosition=true)
+#
+# A quantity-carrying stop protects the size it was placed with, and that
+# size drifts: the partial TP banks 50%, a TP LIMIT part-fills, a MARKET
+# entry fills slightly short. Whatever the stop does not name survives the
+# trigger as unprotected residual - the dust left open after AAVE's TP_HIT.
+# ======================================================================
+class TestClosePositionStops:
+    def _svc(self):
+        svc = _service()
+        post = _Recorder(lambda path, p: {"orderId": 1, "algoId": 1, "status": "NEW", "avgPrice": "100"})
+        svc._signed_post = post
+        svc._get_symbol_filters = _filters
+        return svc, post
+
+    def test_stop_closes_the_whole_position_and_names_no_quantity(self):
+        params = BinanceTradingService._protective_stop_params("BTCUSDT", "BUY", 105.0, 1.0)
+        assert params["closePosition"] == "true"
+        # Mutually exclusive with both - Binance rejects the combination.
+        assert "quantity" not in params and "reduceOnly" not in params
+        assert params["workingType"] == "MARK_PRICE"
+
+    def test_sized_stop_when_the_setting_is_off(self, monkeypatch):
+        monkeypatch.setattr(
+            bts, "get_settings", lambda: _SettingsStub(close_position=False)
+        )
+        params = BinanceTradingService._protective_stop_params("BTCUSDT", "BUY", 105.0, 1.0)
+        assert params["quantity"] == 1.0 and params["reduceOnly"] == "true"
+        assert "closePosition" not in params
+
+    def test_bracket_stop_uses_close_position(self):
+        svc, post = self._svc()
+        _run(svc.place_signal_bracket(
+            symbol="BTCUSDT", direction="SHORT", quantity=1.0,
+            stop_loss=105.0, take_profit=90.0, entry_price=100.0, signal_id="sig-abc",
+        ))
+        stop = next(p for _, p in post.calls if p.get("type") == "STOP_MARKET")
+        assert stop["closePosition"] == "true"
+
+    def test_a_close_position_stop_is_still_recognised_when_read_back(self):
+        # It reports reduceOnly=FALSE, so a reduceOnly-only filter would hide
+        # exactly the stops this service now places.
+        assert bts._is_protective({"closePosition": True, "reduceOnly": False}) is True
+        assert bts._is_protective({"reduceOnly": "true"}) is True
+        # An ENTRY trigger opens a position and is neither.
+        assert bts._is_protective({"reduceOnly": False}) is False
+
+    def test_get_open_stop_orders_finds_a_close_position_stop(self):
+        svc = _service()
+
+        async def fake_get(path, params=None):
+            if path == ALGO_OPEN_ORDERS_PATH:
+                return {"orders": [{
+                    "algoId": 5, "orderType": "STOP_MARKET",
+                    "closePosition": True, "reduceOnly": False, "triggerPrice": "105",
+                }]}
+            return []
+
+        svc._signed_get = fake_get
+        assert [s["orderId"] for s in _run(svc.get_open_stop_orders("BTCUSDT"))] == [5]
+
+    def test_replacement_is_not_refused_for_dust_too_small_to_round(self):
+        # qty rounds to 0, but a closePosition stop names no quantity - the
+        # residual is precisely what it should be protecting.
+        svc, post = self._svc()
+        svc.get_open_stop_orders = lambda symbol: _noop_list()
+        result = _run(svc.replace_stop_loss(
+            symbol="BTCUSDT", direction="SHORT", quantity=0.0000001,
+            new_stop_price=104.0, signal_id="sig-abc",
+        ))
+        assert result.success is True
+        assert next(p for _, p in post.calls if p.get("type") == "STOP_MARKET")["closePosition"] == "true"
+
+
+class _SettingsStub:
+    def __init__(self, close_position):
+        self.stop_close_position = close_position
+        self.stop_working_type = "MARK_PRICE"

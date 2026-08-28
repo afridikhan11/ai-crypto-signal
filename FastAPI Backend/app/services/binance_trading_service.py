@@ -168,6 +168,14 @@ def _is_true(value) -> bool:
     return value in (True, "true", "True")
 
 
+def _is_protective(order: dict) -> bool:
+    """Whether a resting STOP_MARKET row is one of OURS - i.e. it closes rather
+    than opens. A `closePosition` stop reports reduceOnly=FALSE, so filtering on
+    reduceOnly alone would hide precisely the stops this service now places and
+    make every resting one look like a stray entry trigger."""
+    return _is_true(order.get("reduceOnly")) or _is_true(order.get("closePosition"))
+
+
 class OrderResult(BaseModel):
     order_id: int
     symbol: str
@@ -426,6 +434,32 @@ class BinanceTradingService:
         else:
             await self._signed_delete("/fapi/v1/order", {"symbol": symbol.upper(), "orderId": order_id})
 
+    @staticmethod
+    def _protective_stop_params(
+        symbol: str, exit_side: str, stop_price: float, quantity: float
+    ) -> dict:
+        """The ONE place a protective STOP_MARKET payload is built, so every
+        stop this service places - initial, re-attached, or replaced by
+        breakeven/trailing - is shaped identically.
+
+        See Settings.stop_close_position / .stop_working_type for why it
+        closes the whole position and triggers on the mark price."""
+        params = {
+            "symbol": symbol,
+            "side": exit_side,
+            "type": "STOP_MARKET",
+            "stopPrice": stop_price,
+            "workingType": _protective_working_type(),
+        }
+        if get_settings().stop_close_position:
+            # Mutually exclusive with quantity/reduceOnly - sending either
+            # alongside it is rejected.
+            params["closePosition"] = "true"
+        else:
+            params["quantity"] = quantity
+            params["reduceOnly"] = "true"
+        return params
+
     async def cancel_any_order(self, symbol: str, order: dict) -> None:
         """Cancel one order row from `get_all_open_orders()` on whichever
         service owns it. Rows read from the Algo endpoint carry `_is_algo`;
@@ -636,15 +670,7 @@ class BinanceTradingService:
 
         stop_price = self._round_price(stop_loss, filters["tick_size"])
         try:
-            sl_params = {
-                "symbol": symbol,
-                "side": exit_side,
-                "type": "STOP_MARKET",
-                "stopPrice": stop_price,
-                "quantity": qty,
-                "reduceOnly": "true",
-                "workingType": _protective_working_type(),
-            }
+            sl_params = self._protective_stop_params(symbol, exit_side, stop_price, qty)
             sl_params.update(self._client_order_id(signal_id, "S") or {})
             sl_raw = await self._place_conditional_order(sl_params)
             sl_order = OrderResult(
@@ -924,15 +950,7 @@ class BinanceTradingService:
 
         stop_price = self._round_price(stop_loss, filters["tick_size"])
         try:
-            sl_params = {
-                "symbol": symbol,
-                "side": exit_side,
-                "type": "STOP_MARKET",
-                "stopPrice": stop_price,
-                "quantity": qty,
-                "reduceOnly": "true",
-                "workingType": _protective_working_type(),
-            }
+            sl_params = self._protective_stop_params(symbol, exit_side, stop_price, qty)
             sl_params.update(self._client_order_id(signal_id, "S") or {})
             sl_raw = await self._place_conditional_order(sl_params)
             sl_order = OrderResult(
@@ -1064,7 +1082,7 @@ class BinanceTradingService:
             raw = await self._signed_get(ALGO_OPEN_ORDERS_PATH, {"symbol": symbol})
             rows = raw.get("orders", []) if isinstance(raw, dict) else raw
             for r in rows if isinstance(rows, list) else []:
-                if r.get("orderType") == "STOP_MARKET" and _is_true(r.get("reduceOnly")):
+                if r.get("orderType") == "STOP_MARKET" and _is_protective(r):
                     found.append(self._normalise_algo_order(r))
         except BinanceTradingError as exc:
             # A venue without the algo service is not an error here - the
@@ -1075,7 +1093,7 @@ class BinanceTradingService:
             rows = await self._signed_get("/fapi/v1/openOrders", {"symbol": symbol})
             found += [
                 r for r in (rows if isinstance(rows, list) else [])
-                if r.get("type") == "STOP_MARKET" and _is_true(r.get("reduceOnly"))
+                if r.get("type") == "STOP_MARKET" and _is_protective(r)
             ]
         except BinanceTradingError as exc:
             logger.debug(f"{symbol}: legacy open-orders read failed: {exc}")
@@ -1159,7 +1177,10 @@ class BinanceTradingService:
         stop_price = self._round_price(new_stop_price, filters["tick_size"])
         qty = self._round_to_step(quantity, filters["step_size"])
 
-        if qty <= 0:
+        # A closePosition stop names no quantity, so a residual too small to
+        # round to a step is exactly the case it exists to cover - refusing
+        # here would strand the dust it is meant to flatten.
+        if qty <= 0 and not get_settings().stop_close_position:
             return StopReplacementResult(
                 success=False,
                 warning=f"Computed quantity for {symbol} rounds down to 0 - refusing to replace the stop; "
@@ -1188,11 +1209,7 @@ class BinanceTradingService:
         # A `BinanceTradingError` (Binance itself rejected the request) is
         # NOT retried - retrying an invalid request would just fail the
         # same way again.
-        new_params = {
-            "symbol": symbol, "side": exit_side, "type": "STOP_MARKET",
-            "stopPrice": stop_price, "quantity": qty, "reduceOnly": "true",
-            "workingType": _protective_working_type(),
-        }
+        new_params = self._protective_stop_params(symbol, exit_side, stop_price, qty)
         new_params.update(self._stop_replacement_client_order_id(signal_id, stop_price) or {})
 
         new_raw = None

@@ -129,6 +129,20 @@ class Settings(BaseSettings):
     # (`place_stop_market_entry`), where the point is that price genuinely
     # TRADED through the level - that one keeps CONTRACT_PRICE.
     stop_working_type: str = Field(default="MARK_PRICE", alias="STOP_WORKING_TYPE")
+    # WHOLE-POSITION STOPS (2026-08-28). A quantity-carrying reduceOnly stop
+    # protects exactly the size it was placed with, which drifts out of step
+    # with the real position: the partial take-profit banks 50% and the stop
+    # still names the ORIGINAL quantity, a take-profit LIMIT part-fills in a
+    # thin book, or a MARKET entry fills for slightly less than requested.
+    # Whatever the stop does not name survives the trigger as an unprotected
+    # residual - the dust left open after AAVE's TP_HIT.
+    # `closePosition=true` tells Binance to flatten the WHOLE position when the
+    # trigger fires, whatever it happens to be by then, so the stop can never
+    # be the wrong size. It is mutually exclusive with quantity/reduceOnly.
+    # Set false to go back to sized reduceOnly stops - relevant only if this
+    # account ever holds a MANUAL position on a symbol the bot also trades,
+    # since closePosition would close that too.
+    stop_close_position: bool = Field(default=True, alias="STOP_CLOSE_POSITION")
     # PER-POSITION NOTIONAL CAP (2026-08-25): risk-based sizing with a tight
     # structural stop produces a huge position (FIL ran ~2x equity on a ~0.5%
     # stop), and on tight stops EXECUTION cost becomes the real risk - the
