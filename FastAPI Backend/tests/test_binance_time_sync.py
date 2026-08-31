@@ -165,7 +165,16 @@ def _trading(responses):
     svc = BinanceTradingService(api_key="k", api_secret="s", testnet=True)
     svc._time_sync = FakeTimeSync()
     svc._client = FakeClient(responses)
+    # `_signed_post` checks the account's position mode before placing (see
+    # `_assert_one_way_mode`). That is a separate signed GET and would consume
+    # a queued response here; these tests are about the ORDER path and the
+    # -1021 retry, so the mode is pre-answered as one-way.
+    svc._assert_one_way_mode = _noop_mode_check
     return svc
+
+
+async def _noop_mode_check():
+    return None
 
 
 def _account(responses):

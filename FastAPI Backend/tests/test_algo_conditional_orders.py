@@ -586,3 +586,143 @@ class _SettingsStub:
     def __init__(self, close_position):
         self.stop_close_position = close_position
         self.stop_working_type = "MARK_PRICE"
+
+
+# ======================================================================
+# Algo response fields the rest of the module reads
+# ======================================================================
+class TestAlgoStatusIsMapped:
+    def test_algo_status_becomes_status(self):
+        # Without this an algo stop reports None -> callers default it to
+        # "NEW" forever, even after it has TRIGGERED or been CANCELLED.
+        out = BinanceTradingService._normalise_algo_order(
+            {"algoId": 3358, "orderType": "STOP_MARKET", "algoStatus": "TRIGGERED"}
+        )
+        assert out["status"] == "TRIGGERED"
+
+    def test_an_existing_status_is_never_overwritten(self):
+        out = BinanceTradingService._normalise_algo_order(
+            {"algoId": 1, "status": "CANCELED", "algoStatus": "NEW"}
+        )
+        assert out["status"] == "CANCELED"
+
+    def test_maps_the_documented_algo_response_end_to_end(self):
+        # Binance's own linear-swap conditional response shape.
+        out = BinanceTradingService._normalise_algo_order({
+            "algoId": 3358, "clientAlgoId": "yT58zmV3DSzMBQxc5tAJXU",
+            "algoType": "CONDITIONAL", "orderType": "STOP_MARKET",
+            "symbol": "BTCUSDT", "side": "BUY", "positionSide": "BOTH",
+            "algoStatus": "NEW", "triggerPrice": "100000.00",
+            "closePosition": False, "reduceOnly": False,
+        })
+        assert out["orderId"] == 3358
+        assert out["type"] == "STOP_MARKET"
+        assert out["stopPrice"] == "100000.00"
+        assert out["status"] == "NEW"
+        assert out["_is_algo"] is True
+
+
+# ======================================================================
+# Client order ids stay inside Binance's 36-char cap
+# ======================================================================
+class TestClientOrderIdLength:
+    SIGNAL_ID = "314c0f10-b0fe-4ed8-95f1-276d08f7948f"
+
+    def test_entry_leg_id_fits(self):
+        oid = BinanceTradingService._client_order_id(self.SIGNAL_ID, "S")["newClientOrderId"]
+        assert len(oid) <= 36 and oid.isalnum()
+
+    def test_stop_replacement_id_has_headroom(self):
+        # It used to be EXACTLY 36 - correct, but one character from breaking
+        # the moment anything was appended.
+        oid = BinanceTradingService._stop_replacement_client_order_id(
+            self.SIGNAL_ID, 104.5
+        )["newClientOrderId"]
+        assert len(oid) == 33
+        assert oid.isalnum()
+
+    def test_stop_replacement_id_is_deterministic_per_decision(self):
+        a = BinanceTradingService._stop_replacement_client_order_id(self.SIGNAL_ID, 104.5)
+        b = BinanceTradingService._stop_replacement_client_order_id(self.SIGNAL_ID, 104.5)
+        c = BinanceTradingService._stop_replacement_client_order_id(self.SIGNAL_ID, 104.6)
+        assert a == b            # same decision -> same id
+        assert a != c            # a genuinely new stop price -> new id
+
+    def test_no_signal_id_means_no_override(self):
+        assert BinanceTradingService._client_order_id(None, "S") is None
+        assert BinanceTradingService._stop_replacement_client_order_id(None, 1.0) is None
+
+
+# ======================================================================
+# Hedge mode: refuse to trade rather than fail every protective order
+# ======================================================================
+class TestHedgeModeGuard:
+    def setup_method(self):
+        bts._hedge_mode_cache.clear()
+
+    def teardown_method(self):
+        bts._hedge_mode_cache.clear()
+
+    def _svc(self, dual_side):
+        svc = _service()
+
+        async def fake_get(path, params=None):
+            if path == bts._POSITION_MODE_PATH:
+                if isinstance(dual_side, Exception):
+                    raise dual_side
+                return {"dualSidePosition": dual_side}
+            return {}
+
+        svc._signed_get = fake_get
+        sent = []
+
+        async def fake_request(method, path, params):
+            sent.append((method, path, dict(params)))
+            return {"orderId": 1, "status": "NEW"}
+
+        svc._signed_request = fake_request
+        svc.sent = sent
+        return svc
+
+    def test_hedge_mode_refuses_before_anything_is_placed(self):
+        # The failure this prevents: in hedge mode the entry succeeds and then
+        # EVERY protective order is rejected, so the problem only shows up once
+        # a position already exists.
+        svc = self._svc(True)
+        with pytest.raises(BinanceTradingError) as caught:
+            _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
+        assert "HEDGE" in str(caught.value)
+        assert svc.sent == []                          # nothing was sent
+
+    def test_one_way_mode_places_normally(self):
+        svc = self._svc(False)
+        _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
+        assert len(svc.sent) == 1
+
+    def test_string_true_counts_as_hedge(self):
+        # Binance returns booleans as real bools on some paths, strings on others.
+        svc = self._svc("true")
+        with pytest.raises(BinanceTradingError):
+            _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
+
+    def test_the_answer_is_cached_not_read_per_order(self):
+        svc = self._svc(False)
+        reads = {"n": 0}
+        inner = svc._signed_get
+
+        async def counting_get(path, params=None):
+            if path == bts._POSITION_MODE_PATH:
+                reads["n"] += 1
+            return await inner(path, params)
+
+        svc._signed_get = counting_get
+        _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
+        _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
+        assert reads["n"] == 1
+
+    def test_a_failed_mode_read_does_not_block_trading(self):
+        # Refusing to trade because one auxiliary GET timed out would be its
+        # own outage. One-way is what every prior release already assumed.
+        svc = self._svc(BinanceTradingError("timeout", code=-1001, status=500))
+        _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
+        assert len(svc.sent) == 1

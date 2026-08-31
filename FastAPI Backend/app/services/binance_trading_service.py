@@ -157,6 +157,20 @@ _ALGO_PARAMS = _AlgoShape("algoType", "type", "triggerPrice", "clientAlgoId")
 # Parameters that must never reach a log line.
 _SECRET_PARAMS = ("signature", "timestamp", "recvWindow")
 
+# POSITION MODE, learned per host+key and re-checked periodically.
+#
+# Every order this service builds assumes ONE-WAY mode: the stop and the
+# take-profit are reduceOnly (or closePosition), and no `positionSide` is
+# sent, so Binance applies BOTH. In HEDGE mode reduceOnly is rejected
+# outright and positionSide becomes mandatory - so an account switched to
+# hedge would still take entries and then fail EVERY protective order,
+# which is the one failure shape this codebase exists to prevent. The guard
+# below refuses to place anything at all instead, so the problem surfaces
+# before a position exists rather than after.
+_POSITION_MODE_PATH = "/fapi/v1/positionSide/dual"
+_POSITION_MODE_TTL = 600.0
+_hedge_mode_cache: Dict[str, tuple] = {}
+
 
 def _protective_working_type() -> str:
     """Which price fires a protective stop - see Settings.stop_working_type.
@@ -304,10 +318,20 @@ class BinanceTradingService:
         timestamp-validation rejection that Binance performs BEFORE the order
         is ever accepted or matched, so no order can have been placed. As a
         second backstop, order legs carry a deterministic newClientOrderId
-        (see `_client_order_id` / `_stop_replacement_client_order_id`), so even
-        a spurious duplicate would be rejected by Binance with -2010 rather than
-        opening a second position. Any OTHER error is surfaced immediately -
-        never retried - so an ambiguous failure can't double-submit."""
+        (see `_client_order_id` / `_stop_replacement_client_order_id`). On
+        /fapi/v1/order Binance rejects a duplicate id with -2010, so that leg
+        has a second, exchange-level backstop.
+
+        Do NOT extend that assumption to conditional orders: -2010 duplicate
+        rejection is documented for /fapi/v1/order, and Binance does not
+        document the same guarantee for the algo service, where every stop now
+        lives. A duplicate `clientAlgoId` may simply be accepted. What actually
+        protects a stop from being placed twice is `replace_stop_loss()`'s
+        place-new-then-cancel-old ordering plus its read of what is already
+        resting - not this id.
+
+        Any error other than -1021 is surfaced immediately - never retried - so
+        an ambiguous failure cannot double-submit either way."""
         resp = await self._send_signed(method, path, params)
         try:
             return self._parse_or_raise(resp, f"{method} {path}")
@@ -324,8 +348,52 @@ class BinanceTradingService:
             return self._parse_or_raise(resp, f"{method} {path}")
 
     async def _signed_post(self, path: str, params: dict) -> dict:
-        """The ONLY method in this codebase that sends an order-placing POST to Binance."""
+        """The ONLY method in this codebase that sends an order-placing POST to
+        Binance - which is why the one-way-mode guard lives here rather than at
+        each call site: a placement path added later cannot forget it."""
+        await self._assert_one_way_mode()
         return await self._signed_request("POST", path, params)
+
+    async def _assert_one_way_mode(self) -> None:
+        """Refuse to place anything while the account is in HEDGE mode.
+
+        See the _POSITION_MODE_* constants. The answer is cached per host+key
+        for a few minutes: position mode is a setting people change by hand,
+        not something that moves on its own, and the read is weight-30 while
+        the stop-sync path runs every poll.
+
+        A failed read is NOT treated as hedge mode - refusing to trade because
+        one auxiliary GET timed out would be its own outage. The assumption
+        stays one-way, which is what every prior release already assumed."""
+        key = f"{self.base_url}:{self._api_key[:8]}"
+        cached = _hedge_mode_cache.get(key)
+        now = time.monotonic()
+        if cached is not None and (now - cached[1]) < _POSITION_MODE_TTL:
+            is_hedge = cached[0]
+        else:
+            try:
+                raw = await self._signed_get(_POSITION_MODE_PATH)
+                is_hedge = _is_true(raw.get("dualSidePosition")) if isinstance(raw, dict) else False
+            except BinanceTradingError as exc:
+                logger.debug(f"Could not read position mode ({exc}) - assuming one-way, as before.")
+                return
+            _hedge_mode_cache[key] = (is_hedge, now)
+            if is_hedge:
+                logger.error(
+                    "This Binance account is in HEDGE position mode. Every order this bot "
+                    "places assumes ONE-WAY: protective orders are reduceOnly/closePosition "
+                    "and carry no positionSide, both of which hedge mode rejects. Refusing "
+                    "to trade until the account is switched back to One-way Mode."
+                )
+
+        if is_hedge:
+            raise BinanceTradingError(
+                "Account is in HEDGE position mode; this bot only supports One-way Mode "
+                "(its stops and take-profits are reduceOnly/closePosition with no "
+                "positionSide). Switch the account to One-way Mode in Binance Futures "
+                "preferences, or no protective order can be placed.",
+                code=-4061,
+            )
 
     async def _public_get(self, path: str, params: Optional[dict] = None) -> dict:
         resp = await self._client.get(f"{self.base_url}{path}", params=params or {})
@@ -366,9 +434,16 @@ class BinanceTradingService:
 
     @staticmethod
     def _normalise_algo_order(raw: dict) -> dict:
-        """Give an Algo order the same `orderId` / `stopPrice` keys the rest of
-        this module already reads, and tag it `_is_algo` so a later cancel is
-        routed to the algo endpoint rather than /fapi/v1/order."""
+        """Give an Algo order the same `orderId` / `stopPrice` / `status` keys
+        the rest of this module already reads, and tag it `_is_algo` so a later
+        cancel is routed to the algo endpoint rather than /fapi/v1/order.
+
+        The algo service names every one of these differently in its response
+        (`algoId`, `triggerPrice`, `orderType`, `algoStatus`), so without this
+        translation a caller reading `status` would see None and fall back to
+        "NEW" for an order that had already TRIGGERED or been CANCELLED. ccxt
+        does the same fold - see its `parse_order`, which reads
+        `['status', 'strategyStatus', 'algoStatus']`."""
         out = dict(raw)
         if out.get("orderId") is None and out.get("algoId") is not None:
             out["orderId"] = out["algoId"]
@@ -376,6 +451,8 @@ class BinanceTradingService:
             out["stopPrice"] = out["triggerPrice"]
         if out.get("type") is None and out.get("orderType") is not None:
             out["type"] = out["orderType"]
+        if out.get("status") is None and out.get("algoStatus") is not None:
+            out["status"] = out["algoStatus"]
         out["_is_algo"] = True
         return out
 
@@ -604,7 +681,12 @@ class BinanceTradingService:
         if not signal_id:
             return None
         digest = hashlib.sha256(f"{signal_id}:{round(new_stop_price, 8)}".encode("utf-8")).hexdigest()[:8]
-        short_id = signal_id.replace("-", "")[:27]
+        # 24 + "R" + 8 = 33, inside Binance's 36-char cap with room to spare.
+        # This used to be 27 + 1 + 8 = EXACTLY 36 - correct, but with zero
+        # headroom, so any future prefix or suffix would have silently pushed
+        # it over and started failing placements. 24 hex chars is still 96 bits
+        # of the signal's uuid, which is not a collision anybody will meet.
+        short_id = signal_id.replace("-", "")[:24]
         return {"newClientOrderId": f"{short_id}R{digest}"}
 
     async def place_signal_bracket(
