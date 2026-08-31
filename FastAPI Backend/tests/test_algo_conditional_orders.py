@@ -129,12 +129,14 @@ class TestConditionalRouting:
         assert sent["algoType"] == "CONDITIONAL"    # documented request spelling
         assert sent["type"] == "STOP_MARKET"
 
-    def test_falls_back_to_legacy_when_algo_rejects(self):
+    def test_falls_back_to_legacy_when_the_algo_ROUTE_does_not_exist(self):
+        # 404 = this venue predates the Algo service. That, and only that, is
+        # what the legacy fallback is for.
         svc = _service()
 
         def behavior(path, p):
             if path == ALGO_ORDER_PATH:
-                return BinanceTradingError("no algo service here", code=-1121)
+                return BinanceTradingError("Unknown endpoint", code=-1121, status=404)
             return {"orderId": 7, "status": "NEW"}
 
         post = _Recorder(behavior)
@@ -147,13 +149,13 @@ class TestConditionalRouting:
         assert bts._conditional_uses_algo[svc.base_url] is False
 
     def test_one_algo_attempt_per_order_never_a_ladder(self):
-        # A refusal costs exactly ONE algo request, then the legacy fallback -
-        # never a burst of doomed spellings whose errors overwrite each other.
+        # A refusal costs exactly ONE algo request - never a burst of doomed
+        # spellings whose errors overwrite each other.
         svc = _service()
 
         def behavior(path, p):
             if path == ALGO_ORDER_PATH:
-                return BinanceTradingError("Invalid orderType.", code=-1116)
+                return BinanceTradingError("Unknown endpoint", code=-1121, status=404)
             return {"orderId": 3, "status": "NEW"}
 
         post = _Recorder(behavior)
@@ -162,6 +164,28 @@ class TestConditionalRouting:
         _run(svc._place_conditional_order(dict(STOP_PARAMS)))
         assert len([c for c in post.calls if c[0] == ALGO_ORDER_PATH]) == 1
 
+    def test_a_BUSINESS_rejection_is_raised_never_re_routed(self):
+        # The bug this prevents: on 2026-08-30 the algo service refused an
+        # ETHUSDT stop with -2021 "order would immediately trigger" (the 0.15%
+        # stop was already breached). The old code treated that as "no algo
+        # service here", re-sent it to /fapi/v1/order, and reported the -4120
+        # routing error instead - so the log blamed routing for a stop that was
+        # simply too close, and the position was left open with no stop at all.
+        svc = _service()
+
+        def behavior(path, p):
+            if path == ALGO_ORDER_PATH:
+                return BinanceTradingError("Order would immediately trigger.", code=-2021, status=400)
+            return {"orderId": 3, "status": "NEW"}
+
+        post = _Recorder(behavior)
+        svc._signed_post = post
+
+        with pytest.raises(BinanceTradingError) as caught:
+            _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+        assert caught.value.code == -2021                      # the REAL reason
+        assert [c[0] for c in post.calls] == [ALGO_ORDER_PATH]  # never re-sent
+
     def test_refusal_is_logged_with_the_payload_we_actually_sent(self):
         # The whole point of dropping the ladder: when a stop is refused, the
         # log must carry OUR payload beside BINANCE's answer - and no secrets.
@@ -169,14 +193,17 @@ class TestConditionalRouting:
 
         def behavior(path, p):
             if path == ALGO_ORDER_PATH:
-                return BinanceTradingError("Mandatory parameter 'algoType' was not sent", code=-1102)
+                return BinanceTradingError(
+                    "Mandatory parameter 'algoType' was not sent", code=-1102, status=400
+                )
             return {"orderId": 3, "status": "NEW"}
 
         svc._signed_post = _Recorder(behavior)
         lines: list[str] = []
         sink = logger.add(lines.append, level="WARNING", format="{message}")
         try:
-            _run(svc._place_conditional_order(dict(STOP_PARAMS)))
+            with pytest.raises(BinanceTradingError):
+                _run(svc._place_conditional_order(dict(STOP_PARAMS)))
         finally:
             logger.remove(sink)
 
@@ -205,14 +232,12 @@ class TestConditionalRouting:
             _run(svc._place_conditional_order(dict(STOP_PARAMS)))
         assert len(post.calls) == 1
 
-    def test_unknown_host_falls_back_on_a_non_spelling_error(self):
-        # A host with no algo service at all answers something other than
-        # -1102: use legacy, still after exactly one attempt.
+    def test_unknown_host_falls_back_after_exactly_one_attempt(self):
         svc = _service()
 
         def behavior(path, p):
             if path == ALGO_ORDER_PATH:
-                return BinanceTradingError("Unknown endpoint", code=-1121)
+                return BinanceTradingError("Unknown endpoint", code=-1121, status=404)
             return {"orderId": 4, "status": "NEW"}
 
         post = _Recorder(behavior)

@@ -362,6 +362,32 @@ class SignalMonitor:
         finally:
             await service.close()
 
+    async def _close_unprotected_position(
+        self, signal: Signal, symbol: str, service
+    ) -> bool:
+        """Flatten a position that has no stop resting behind it, and cancel
+        whatever else is left over (typically the take-profit LIMIT, which
+        would otherwise rest against a flat position).
+
+        Returns True when the position is confirmed gone - including when
+        there was nothing to close - and False when the exchange refused,
+        which is the case the caller must shout about."""
+        try:
+            quantity = await self._get_live_position_quantity(symbol)
+            if quantity:
+                await service.close_position(symbol, quantity)
+                logger.success(
+                    f"{symbol}: unprotected position ({quantity}) MARKET-closed "
+                    f"(signal {signal.id})."
+                )
+            for order in await service.get_all_open_orders(symbol):
+                if order.get("orderId") is not None:
+                    await service.cancel_any_order(symbol, order)
+            return True
+        except BinanceTradingError as exc:
+            logger.error(f"{symbol}: emergency close of an unprotected position FAILED: {exc}")
+            return False
+
     async def _place_protection_after_fill(
         self, signal: Signal, symbol: str, filled_qty: float
     ) -> List[str]:
@@ -389,6 +415,51 @@ class SignalMonitor:
                     f"{symbol}: protective SL/TP attached after pending entry filled "
                     f"| qty={filled_qty} | SL={signal.stop_loss} | TP={signal.take_profit}"
                 )
+
+            # VERIFY, don't assume. A filled entry with no resting stop is the
+            # one state this platform must never leave behind - and it is
+            # exactly what happened to ETHUSDT on 2026-08-30, where a 0.15%
+            # stop distance was already breached by the time the stop was
+            # placed (-2021 "order would immediately trigger") and the
+            # position sat open and naked.
+            #
+            # Asking the exchange what is actually resting covers every reason
+            # the stop might be missing, not just the ones we thought to
+            # handle. If none is, the position is closed at market: when the
+            # stop is already breached that IS the stop doing its job, and
+            # when it is anything else an unprotected position is not a thing
+            # to keep. The software stop only protects while this process is
+            # alive, so it is not an answer here.
+            try:
+                resting = await service.get_open_stop_orders(symbol)
+            except BinanceTradingError as exc:
+                logger.warning(f"{symbol}: could not verify the resting stop after fill: {exc}")
+                return warnings
+
+            if not resting:
+                logger.error(
+                    f"{symbol}: entry filled but NO stop is resting on the exchange - "
+                    f"closing the position at market rather than leaving it unprotected."
+                )
+                if await self._close_unprotected_position(signal, symbol, service):
+                    # The trade is over, so the signal must say so rather than
+                    # sit ACTIVE against a position that no longer exists.
+                    # STOPPED is the honest label: the usual reason a stop
+                    # cannot be placed is that price has already passed it.
+                    # `signal_stats` classifies win/loss by REAL P/L, not by
+                    # this status, so a close nearer entry is still reported
+                    # for what it actually was.
+                    signal.status = SignalStatus.STOPPED
+                    signal.closed_at = datetime.now(timezone.utc)
+                    warnings.append(
+                        "Entry filled but no stop could be placed - the position was closed "
+                        "at market immediately."
+                    )
+                else:
+                    warnings.append(
+                        "Entry filled, NO stop is resting, and the emergency close FAILED - "
+                        "this position is open and unprotected. Close it manually NOW."
+                    )
             return warnings
         except Exception as e:  # noqa: BLE001
             logger.exception(f"{symbol}: FAILED to attach protective orders after fill: {e}")

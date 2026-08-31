@@ -88,11 +88,14 @@ class BinanceTradingError(Exception):
 
     Carries the numeric Binance error `code` (e.g. -1021 for a timestamp
     outside the recvWindow) when the response body supplied one, so callers can
-    react to a specific failure without string-matching the message."""
+    react to a specific failure without string-matching the message, plus the
+    HTTP `status`, which is what separates "this endpoint does not exist here"
+    (404) from "the endpoint understood the request and rejected it" (400)."""
 
-    def __init__(self, message: str, code: Optional[int] = None):
+    def __init__(self, message: str, code: Optional[int] = None, status: Optional[int] = None):
         super().__init__(message)
         self.code = code
+        self.status = status
 
 
 # ----------------------------------------------------------------------
@@ -402,19 +405,25 @@ class BinanceTradingService:
                     )
                 return self._normalise_algo_order(raw)
             except BinanceTradingError as exc:
-                if proven:
-                    # This host has already served an algo order, so this is a
-                    # genuine order failure - surface it, never silently
-                    # re-route to an endpoint that would answer -4120.
+                # The legacy fallback exists for venues that predate the Algo
+                # service - i.e. where the ROUTE does not exist (404). A 400 is
+                # the algo service itself understanding the request and
+                # rejecting it on its merits ("-2021 order would immediately
+                # trigger", "-2019 margin is insufficient"), and re-sending that
+                # same order to /fapi/v1/order can only ever answer -4120. That
+                # buried the real reason a stop was refused behind a routing
+                # error that had nothing to do with it, so a business rejection
+                # is raised, never re-routed.
+                if proven or exc.status != 404:
+                    logger.error(
+                        f"Algo Order API refused this order on {self.base_url} "
+                        f"(code={exc.code}): {exc}\n"
+                        f"  sent to {ALGO_ORDER_PATH}: {self._loggable(algo_params)}"
+                    )
                     raise
-                # First refusal on this host. Log EXACTLY what we sent beside
-                # exactly what Binance answered: without both halves the next
-                # step is guesswork, and this payload carries a stop-loss.
                 logger.warning(
-                    f"Algo Order API refused the documented payload on {self.base_url} "
-                    f"(code={exc.code}): {exc}\n"
-                    f"  sent to {ALGO_ORDER_PATH}: {self._loggable(algo_params)}\n"
-                    f"  falling back to the legacy /fapi/v1/order endpoint once."
+                    f"No Algo Order service on {self.base_url} ({exc}) - "
+                    f"falling back to the legacy /fapi/v1/order endpoint once."
                 )
 
         raw = await self._signed_post("/fapi/v1/order", params)
@@ -486,7 +495,8 @@ class BinanceTradingService:
             except Exception:
                 pass
             raise BinanceTradingError(
-                f"{context} failed ({resp.status_code}, code={code}): {msg}", code=code
+                f"{context} failed ({resp.status_code}, code={code}): {msg}",
+                code=code, status=resp.status_code,
             )
         return resp.json()
 
