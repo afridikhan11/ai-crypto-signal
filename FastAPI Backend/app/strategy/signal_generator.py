@@ -101,6 +101,31 @@ from app.models.signal import Direction
 from app.services.trading_settings import is_ict_pending_entry
 
 
+def stop_distance_pct(entry: float, stop: float) -> float:
+    """How far the stop sits from entry, as a % of entry. 0.0 for a degenerate
+    entry, so callers never divide by zero."""
+    if not entry:
+        return 0.0
+    return abs(entry - stop) / entry * 100.0
+
+
+def stop_too_close(entry: float, stop: float, min_pct: float) -> bool:
+    """NOISE-FLOOR GATE (pure): True when the stop sits nearer to entry than
+    `min_pct`% - close enough that ordinary noise decides the trade instead of
+    the idea.
+
+    Measured live on 2026-08-30: ETH 0.15%, DOT 0.17%, BTC 0.21%. At that
+    distance a wick resolves the trade, risk-based sizing inflates until the
+    notional cap stops it (leaving a round trip's fees at roughly HALF the
+    whole planned loss), and Binance may refuse the stop outright with -2021
+    because price crossed it between fill and placement.
+
+    This only ever REJECTS a signal - it never moves a stop. Structure decides
+    where the stop belongs; this decides whether that trade is worth taking.
+    `min_pct` of 0 disables."""
+    return min_pct > 0 and stop_distance_pct(entry, stop) < min_pct
+
+
 def aligned_confluence_bonus(signals, direction, weights, cap) -> float:
     """Confidence points from proven latest-ICT engines that agree with the
     trade direction.
@@ -867,6 +892,24 @@ class SignalGenerator:
                         f"Kill Zone; current session context is '{session_ctx.label}'."
                     ),
                 ))
+
+        # A stop nearer to entry than ordinary noise is not a tight stop - it
+        # is a coin flip that also pays fees. Measured against the entry this
+        # signal will actually use, so it reflects the real trade in either
+        # entry mode. See Settings.min_stop_distance_pct.
+        min_stop_pct = _gate_settings.min_stop_distance_pct
+        measured_stop_pct = stop_distance_pct(entry_price_used, stop_loss)
+        if stop_too_close(entry_price_used, stop_loss, min_stop_pct):
+            blocking.append(BlockingReason(
+                gate=RejectionGate.MIN_STOP_DISTANCE,
+                detail=(
+                    f"Stop sits {measured_stop_pct:.2f}% from entry, inside the "
+                    f"{min_stop_pct}% noise floor - it would be hit before the idea "
+                    f"is right or wrong, and fees would consume most of the planned loss."
+                ),
+                measured=float(measured_stop_pct),
+                threshold=float(min_stop_pct),
+            ))
 
         if rr < self.profile.min_risk_reward:
             blocking.append(BlockingReason(

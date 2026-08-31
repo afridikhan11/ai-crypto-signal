@@ -101,6 +101,9 @@ class RejectionGate(str, Enum):
     # app/assets/asset_profile.py's ICTFilters.
     OFF_SESSION = "off_session"
     KILL_ZONE_REQUIRED = "kill_zone_required"
+    # A stop closer to entry than ordinary noise is not a tight stop, it is a
+    # coin flip that also pays fees. See Settings.min_stop_distance_pct.
+    MIN_STOP_DISTANCE = "min_stop_distance"
 
 
 class RiskLevel(str, Enum):

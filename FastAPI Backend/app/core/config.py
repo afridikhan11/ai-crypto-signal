@@ -143,6 +143,22 @@ class Settings(BaseSettings):
     # account ever holds a MANUAL position on a symbol the bot also trades,
     # since closePosition would close that too.
     stop_close_position: bool = Field(default=True, alias="STOP_CLOSE_POSITION")
+    # MINIMUM STOP DISTANCE (2026-08-30). Structure can sit very close to
+    # price, and the stops that came out of it were 0.15-0.21% from entry
+    # (ETH 0.15%, DOT 0.17%, BTC 0.21%). In crypto that is inside ordinary
+    # noise, and it fails three ways at once:
+    #   - the stop is hit by a wick before the idea is right or wrong;
+    #   - risk-based sizing (risk / stop distance) blows up until the notional
+    #     cap catches it, so a round trip's fees reach ~47% of the whole
+    #     planned loss - the fee drag that ate 72% of gross P/L before;
+    #   - the stop can be refused outright with -2021 ("would immediately
+    #     trigger") when price crosses it between fill and placement, which is
+    #     exactly what happened to ETHUSDT on 2026-08-30.
+    # A signal whose stop is nearer than this % of entry is not taken. 0
+    # disables. This is a floor on the SIGNAL, never a nudge to the stop - the
+    # stop stays exactly where structure put it (the PR #21 lesson: filter,
+    # never move a price).
+    min_stop_distance_pct: float = Field(default=0.6, alias="MIN_STOP_DISTANCE_PCT")
     # PER-POSITION NOTIONAL CAP (2026-08-25): risk-based sizing with a tight
     # structural stop produces a huge position (FIL ran ~2x equity on a ~0.5%
     # stop), and on tight stops EXECUTION cost becomes the real risk - the
