@@ -112,3 +112,39 @@ class TestOpenPositionsCap:
 
     def test_config_default_is_3(self):
         assert get_settings().max_open_positions == 3
+
+
+class TestPaperFillsAreNotExecutable:
+    """A signal a cap held back is still RECORDED and still tracked - the
+    monitor marks it ACTIVE if price reaches the entry zone, so the stats can
+    answer what the cap cost. That paper trade must never reach the executor.
+
+    Entering it would be a MARKET fill hours after the zone was touched, at a
+    price the decision was never made at - destroying the property pending
+    entries exist for (entry_price == the real fill, so sizing, 1R breakeven
+    and backtested RR are correct by construction).
+
+    Seen live: XRP, DOGE and AAVE (2026-08-31 to 09-02) each sat in the queue
+    being re-offered every cycle, already trailed to a breakeven stop that no
+    sizing call can use.
+    """
+
+    def _sql(self):
+        return str(pending_execution_stmt().compile(compile_kwargs={"literal_binds": True}))
+
+    def test_query_distinguishes_pending_mode_from_market_mode(self):
+        sql = self._sql()
+        # Pending-mode signals carry entry_expires_at; market-mode ones are
+        # born ACTIVE with it NULL and must still be executable.
+        assert "entry_expires_at IS NULL" in sql
+        assert "PENDING_ENTRY" in sql
+
+    def test_the_paper_case_is_excluded_by_construction(self):
+        # ACTIVE + never executed + pending-mode (entry_expires_at set) is the
+        # excluded shape; every other combination stays eligible.
+        sql = self._sql()
+        assert "executed" in sql
+        # Both halves of the OR are in the WHERE clause, so a market-mode
+        # signal born ACTIVE is not swept up with the paper fills.
+        where = sql.split("WHERE", 1)[1]
+        assert "status = 'PENDING_ENTRY' OR signals.entry_expires_at IS NULL" in where

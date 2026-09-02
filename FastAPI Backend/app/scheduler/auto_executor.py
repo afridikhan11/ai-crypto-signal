@@ -94,7 +94,24 @@ def pending_execution_stmt():
     a named strategy) are recorded for attribution/analysis but MUST NOT be
     auto-executed here. Their execution is a separate, deliberate opt-in, so
     enabling a strategy can never silently start placing real testnet orders
-    mixed in with the legacy bot's trades."""
+    mixed in with the legacy bot's trades.
+
+    PAPER FILLS ARE NOT EXECUTABLE. When a cap holds a signal back it is still
+    RECORDED and still tracked - the monitor watches price and marks it ACTIVE
+    if the entry zone is reached, so the stats can answer "what would the cap
+    have cost us". That paper trade must never then be handed to the executor:
+    entering it now would be a MARKET fill, hours after the zone was touched,
+    at a price the decision was never made at - which destroys the very
+    property pending entries exist for (`entry_price` == the real fill, so
+    sizing, 1R breakeven and backtested RR are correct by construction).
+
+    A pending-mode signal carries `entry_expires_at`; a market-mode one is born
+    ACTIVE with it NULL and SHOULD be executed at once. So the rule is: a
+    pending-mode signal is executable only while it is still PENDING_ENTRY.
+
+    Without this the same three signals (XRP, DOGE, AAVE - 2026-08-31 to 09-02)
+    sat in the queue being re-offered every cycle, each already trailed to a
+    breakeven stop that no sizing call can use."""
     return (
         select(Signal)
         .options(selectinload(Signal.coin))
@@ -102,6 +119,10 @@ def pending_execution_stmt():
             Signal.executed.is_(False),
             Signal.status.in_(NON_TERMINAL_STATUSES),
             or_(Signal.strategy_id.is_(None), Signal.strategy_id == LEGACY_STRATEGY_ID),
+            or_(
+                Signal.status == SignalStatus.PENDING_ENTRY,
+                Signal.entry_expires_at.is_(None),   # market-mode: born ACTIVE
+            ),
         )
     )
 
