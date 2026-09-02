@@ -726,3 +726,98 @@ class TestHedgeModeGuard:
         svc = self._svc(BinanceTradingError("timeout", code=-1001, status=500))
         _run(svc._signed_post("/fapi/v1/order", {"symbol": "BTCUSDT"}))
         assert len(svc.sent) == 1
+
+
+# ======================================================================
+# Moving a closePosition stop
+#
+# Binance allows ONE closePosition stop per side per symbol and answers
+# -4130 for a second, so the place-new-then-cancel-old ordering that
+# protects every other replacement is impossible here. Observed live on
+# 2026-09-01: every breakeven/trailing move failed with
+# "An open stop or take profit order with GTE and closePosition in the
+# direction is existing", leaving the stop frozen where it was first placed.
+# ======================================================================
+class TestClosePositionStopMove:
+    FILTERS = {"step_size": 0.001, "tick_size": 0.01, "min_notional": 5.0}
+    RESTING = [{"orderId": 55, "stopPrice": "105.0", "_is_algo": True}]
+
+    def _svc(self, place_behavior):
+        svc = _service()
+        svc._get_symbol_filters = _filters
+        svc.get_open_stop_orders = lambda symbol: _resting(self.RESTING)
+        cancelled = []
+
+        async def fake_cancel(symbol, order_id, is_algo=False):
+            cancelled.append(order_id)
+
+        svc.cancel_conditional_order = fake_cancel
+        svc._signed_post = _Recorder(place_behavior)
+        svc.cancelled = cancelled
+        return svc
+
+    def test_cancels_the_old_stop_BEFORE_placing_the_new_one(self):
+        svc = self._svc(lambda path, p: {"algoId": 77, "algoStatus": "NEW"})
+        result = _run(svc.replace_stop_loss("BTCUSDT", "SHORT", 1.0, 104.0, signal_id="sig-abc"))
+
+        assert result.success is True
+        assert svc.cancelled == [55]                       # old one went first
+        assert result.new_order.price == 104.0
+        assert result.cancelled_order_ids == [55]
+        # Exactly one placement - no doomed attempt at doubling up.
+        assert len(svc._signed_post.calls) == 1
+
+    def test_a_failed_move_puts_the_OLD_stop_back(self):
+        # The position must never be left bare because a move failed.
+        attempts = {"n": 0}
+
+        def behavior(path, p):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                return BinanceTradingError("Order would immediately trigger.", code=-2021, status=400)
+            return {"algoId": 78, "algoStatus": "NEW"}     # the restore succeeds
+
+        svc = self._svc(behavior)
+        result = _run(svc.replace_stop_loss("BTCUSDT", "SHORT", 1.0, 104.0, signal_id="sig-abc"))
+
+        assert result.success is False
+        assert "put back" in result.warning
+        restored = svc._signed_post.calls[1][1]
+        assert restored["triggerPrice"] == 105.0           # the ORIGINAL level
+        assert restored["closePosition"] == "true"
+
+    def test_it_shouts_when_the_restore_also_fails(self):
+        svc = self._svc(lambda path, p: BinanceTradingError("nope", code=-2021, status=400))
+        result = _run(svc.replace_stop_loss("BTCUSDT", "SHORT", 1.0, 104.0, signal_id="sig-abc"))
+
+        assert result.success is False
+        assert "UNPROTECTED" in result.warning
+
+    def test_a_failed_CANCEL_leaves_the_old_stop_alone(self):
+        # Nothing was removed, so the position is still protected - refuse
+        # rather than pretend the move happened.
+        svc = self._svc(lambda path, p: {"algoId": 77})
+
+        async def refuse(symbol, order_id, is_algo=False):
+            raise BinanceTradingError("cannot cancel", code=-2011, status=400)
+
+        svc.cancel_conditional_order = refuse
+        result = _run(svc.replace_stop_loss("BTCUSDT", "SHORT", 1.0, 104.0, signal_id="sig-abc"))
+
+        assert result.success is False
+        assert "still resting" in result.warning
+        assert len(svc._signed_post.calls) == 0            # nothing was placed
+
+    def test_with_nothing_resting_the_normal_path_is_used(self):
+        svc = _service()
+        svc._get_symbol_filters = _filters
+        svc.get_open_stop_orders = lambda symbol: _resting([])
+        svc._signed_post = _Recorder(lambda path, p: {"algoId": 90, "algoStatus": "NEW"})
+
+        result = _run(svc.replace_stop_loss("BTCUSDT", "SHORT", 1.0, 104.0, signal_id="sig-abc"))
+        assert result.success is True
+        assert result.cancelled_order_ids == []
+
+
+async def _resting(rows):
+    return list(rows)

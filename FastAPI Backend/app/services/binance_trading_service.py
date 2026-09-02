@@ -1232,6 +1232,82 @@ class BinanceTradingService:
         rows += legacy if isinstance(legacy, list) else []
         return rows
 
+    async def _replace_stop_cancel_first(
+        self, symbol: str, exit_side: str, stop_price: float, qty: float,
+        signal_id: Optional[str], existing_stops: list[dict],
+    ) -> "StopReplacementResult":
+        """Move a closePosition stop, which Binance will not let us double up
+        (-4130). See the comment at `replace_stop_loss()`'s step 2a.
+
+        Cancel, place, and on failure put the OLD stop back at its own trigger
+        price. The restore deliberately carries NO client order id: getting
+        protection back matters more than idempotency, and a duplicate id is
+        one more way for the restore itself to be refused."""
+        cancelled: list[tuple] = []
+        for old in existing_stops:
+            old_id = old.get("orderId")
+            if old_id is None:
+                continue
+            try:
+                await self.cancel_conditional_order(symbol, old_id, is_algo=old.get("_is_algo", False))
+                cancelled.append((old_id, old.get("stopPrice")))
+            except BinanceTradingError as exc:
+                # Could not clear the way, so nothing was removed - the old
+                # stop is still protecting the position. Refuse and say so.
+                return StopReplacementResult(
+                    success=False,
+                    warning=f"Could not cancel the existing stop {old_id} to move it to {stop_price} "
+                            f"- the old stop is still resting and protecting the position: {exc}",
+                )
+
+        new_params = self._protective_stop_params(symbol, exit_side, stop_price, qty)
+        new_params.update(self._stop_replacement_client_order_id(signal_id, stop_price) or {})
+        try:
+            new_raw = await self._place_conditional_order(new_params)
+        except (BinanceTradingError, httpx.RequestError) as exc:
+            restored = await self._restore_cancelled_stops(symbol, exit_side, qty, cancelled)
+            if restored:
+                return StopReplacementResult(
+                    success=False,
+                    warning=f"Stop move to {stop_price} failed ({exc}) - the previous stop was put back, "
+                            f"so the position is protected at its old level.",
+                )
+            return StopReplacementResult(
+                success=False,
+                warning=f"Stop move to {stop_price} failed ({exc}) AND the previous stop could not be "
+                        f"put back - THIS POSITION IS UNPROTECTED. Place a stop manually now.",
+            )
+
+        logger.success(f"{symbol}: stop moved to {stop_price} (order {new_raw['orderId']}).")
+        return StopReplacementResult(
+            success=True,
+            new_order=OrderResult(
+                order_id=new_raw["orderId"], symbol=symbol, side=exit_side,
+                order_type="STOP_MARKET", status=new_raw.get("status", "NEW"),
+                quantity=qty, price=stop_price,
+            ),
+            cancelled_order_ids=[oid for oid, _ in cancelled],
+        )
+
+    async def _restore_cancelled_stops(
+        self, symbol: str, exit_side: str, qty: float, cancelled: list[tuple]
+    ) -> bool:
+        """Put back stops cancelled during a failed move. True when the
+        position is protected again."""
+        for old_id, old_price in cancelled:
+            if old_price is None:
+                logger.error(f"{symbol}: cannot restore stop {old_id} - its trigger price is unknown.")
+                return False
+            try:
+                await self._place_conditional_order(
+                    self._protective_stop_params(symbol, exit_side, float(old_price), qty)
+                )
+                logger.warning(f"{symbol}: restored the previous stop at {old_price} after a failed move.")
+            except (BinanceTradingError, httpx.RequestError) as exc:
+                logger.error(f"{symbol}: FAILED to restore the previous stop at {old_price}: {exc}")
+                return False
+        return bool(cancelled)
+
     async def replace_stop_loss(
         self,
         symbol: str,
@@ -1288,6 +1364,26 @@ class BinanceTradingService:
                 success=False,
                 warning=f"Could not read existing stop orders for {symbol} - refusing to proceed "
                         f"without knowing current protection state: {exc}",
+            )
+
+        # 2a. A closePosition stop cannot be doubled up.
+        #
+        # Binance allows exactly ONE closePosition stop per side per symbol and
+        # answers -4130 for a second: "An open stop or take profit order with
+        # GTE and closePosition in the direction is existing." So the
+        # place-new-then-cancel-old ordering below - which exists precisely so
+        # protection is never absent for an instant - is impossible here, and
+        # every breakeven/trailing move silently stopped working when
+        # closePosition became the default.
+        #
+        # The invariant is kept by a compensating action instead of by
+        # ordering: cancel, place, and if the placement fails RESTORE the old
+        # stop at its own trigger price. The unprotected window is one round
+        # trip, and it never ends unprotected unless the exchange refuses
+        # twice - which is said out loud rather than swallowed.
+        if existing_stops and get_settings().stop_close_position:
+            return await self._replace_stop_cancel_first(
+                symbol, exit_side, stop_price, qty, signal_id, existing_stops
             )
 
         # 2. Place the NEW stop. Nothing existing is touched yet.

@@ -21,6 +21,27 @@ from app.services.binance_trading_service import (
 FILTERS = {"step_size": 0.001, "tick_size": 0.01, "min_notional": 5.0}
 
 
+@pytest.fixture(autouse=True)
+def _sized_stops():
+    """These tests describe the place-NEW-then-cancel-OLD ordering, which is
+    the contract for SIZED reduceOnly stops.
+
+    A closePosition stop cannot follow it: Binance permits only one per side
+    and answers -4130 for a second, so that mode cancels first and restores
+    the old stop if the placement fails. That path has its own tests in
+    tests/test_algo_conditional_orders.py::TestClosePositionStopMove."""
+    from app.services import binance_trading_service as bts
+
+    class _Sized:
+        stop_close_position = False
+        stop_working_type = "MARK_PRICE"
+
+    original = bts.get_settings
+    bts.get_settings = lambda: _Sized()
+    yield
+    bts.get_settings = original
+
+
 def _run(coro):
     return asyncio.run(coro)
 
