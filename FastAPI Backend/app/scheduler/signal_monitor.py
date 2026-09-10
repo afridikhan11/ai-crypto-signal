@@ -118,6 +118,8 @@ from app.core.constants import PENDING_ENTRY_EXPIRY_MINUTES
 from app.core.database import AsyncSessionLocal
 from app.core.redis import redis_client
 from app.diagnostics.signal_pipeline_diagnostics import diagnostics
+from sqlalchemy.ext.asyncio import async_object_session
+from app.models.signal_event import SignalEvent
 from app.models.signal import Signal, SignalStatus, Direction
 from app.services import binance_credentials
 from app.services.binance_account_service import BinanceAccountService
@@ -451,6 +453,11 @@ class SignalMonitor:
                     # for what it actually was.
                     signal.status = SignalStatus.STOPPED
                     signal.closed_at = datetime.now(timezone.utc)
+                    # Closed at market moments after the fill, so the fill is
+                    # the honest estimate of the exit level.
+                    approx = signal.actual_fill_price or signal.entry_price
+                    self._record_exit(signal, approx, "unprotected_close: no stop could be placed after fill")
+                    self._record_event(signal, "unprotected_close", approx, stop_before=signal.stop_loss)
                     warnings.append(
                         "Entry filled but no stop could be placed - the position was closed "
                         "at market immediately."
@@ -486,6 +493,43 @@ class SignalMonitor:
         if cutoff.tzinfo is not None:
             cutoff = cutoff.tz_convert("UTC").tz_localize(None)
         return [b for b in structure_breaks if pd.Timestamp(b.timestamp) > cutoff]
+
+    # ------------------------------------------------------------------
+    # Exit record + management ledger (2026-09-10)
+    #
+    # Until now a CANCELLED structure-failure exit stored nothing, so the
+    # most common outcome of the first clean measurement era (60% of
+    # executed trades) had no P/L at all. Every terminal transition now
+    # records WHERE and WHY it ended, and every management decision writes
+    # one SignalEvent row with the live price - a log line is not data.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _record_exit(signal: Signal, price: float, reason: str) -> None:
+        """Set once at the terminal transition, never overwritten."""
+        if getattr(signal, "exit_price", None) is None:
+            signal.exit_price = price
+        if not getattr(signal, "exit_reason", None):
+            signal.exit_reason = reason[:160]
+
+    @staticmethod
+    def _record_event(
+        signal: Signal, event_type: str, price: float, reason: Optional[str] = None,
+        stop_before: Optional[float] = None, stop_after: Optional[float] = None,
+    ) -> None:
+        """Append one ledger row in the signal's own session. Best-effort:
+        a signal not attached to a session (tests, ad-hoc calls) is skipped
+        rather than raising into the trading path."""
+        try:
+            session = async_object_session(signal)
+        except Exception:  # noqa: BLE001 - an unmapped stand-in has no session
+            return
+        if session is None:
+            return
+        session.add(SignalEvent(
+            signal_id=signal.id, event_type=event_type, price=price,
+            stop_before=stop_before, stop_after=stop_after,
+            reason=(reason or "")[:255] or None,
+        ))
 
     def _improves_stop(self, signal: Signal, new_stop: float) -> bool:
         """Safety invariant 1 - a stop may only ever move toward profit."""
@@ -839,6 +883,11 @@ class SignalMonitor:
                     logger.warning(f"{symbol}: TP1 breakeven stop sync failed (software stop active): {e}")
 
         signal.tp1_done = True
+        self._record_event(
+            signal, "tp1_partial", price,
+            reason=f"{fraction:.0%} banked at TP1 {signal.tp1_price}",
+            stop_after=entry if stop_moved else None,
+        )
         logger.success(
             f"{symbol}: TP1 HIT at {price} (level {signal.tp1_price}) - "
             f"{fraction:.0%} banked{' , stop -> breakeven' if stop_moved else ''}; "
@@ -899,6 +948,11 @@ class SignalMonitor:
             was_executed = signal.executed
             signal.status = SignalStatus.CANCELLED
             signal.closed_at = datetime.now(timezone.utc)
+            self._record_exit(signal, price, f"structure_failure: {structure_failure.reason}")
+            self._record_event(
+                signal, structure_failure.action_type.value, price,
+                reason=structure_failure.reason, stop_before=signal.stop_loss,
+            )
             logger.warning(
                 f"{symbol}: Signal CLOSED by structure failure | {structure_failure.reason} | "
                 f"Price={price} | Entry={signal.entry_price}"
@@ -961,6 +1015,10 @@ class SignalMonitor:
             )
             if synced or software_stop:
                 signal.stop_loss = new_stop
+                self._record_event(
+                    signal, best_action.action_type.value, price,
+                    reason=best_action.reason, stop_before=previous_stop, stop_after=new_stop,
+                )
                 if software_stop:
                     # No exchange order rests here (e.g. Binance Demo, -4120),
                     # so the software stop is the operative stop and reads
@@ -1260,6 +1318,10 @@ class SignalMonitor:
                 if new_status is not None:
                     signal.status = new_status
                     signal.closed_at = datetime.now(timezone.utc)
+                    self._record_exit(signal, price, new_status.value.lower())
+                    self._record_event(
+                        signal, new_status.value.lower(), price, stop_before=signal.stop_loss,
+                    )
                     dirty = True
                     events.append({
                         "event": "signal_closed",
@@ -1309,6 +1371,8 @@ class SignalMonitor:
                     if reconciled is not None:
                         signal.status = reconciled
                         signal.closed_at = datetime.now(timezone.utc)
+                        self._record_exit(signal, price, "reconciled: live position no longer on exchange")
+                        self._record_event(signal, "reconciled", price, stop_before=signal.stop_loss)
                         dirty = True
                         events.append({
                             "event": "signal_closed",

@@ -27,6 +27,7 @@ from app.core.config import get_settings
 from app.models.base import Base
 from app.models import coin as _coin  # noqa: F401
 from app.models import signal as _signal  # noqa: F401
+from app.models import signal_event as _signal_event  # noqa: F401
 from app.models import equity_snapshot as _equity_snapshot  # noqa: F401
 from app.models import risk_assessment as _risk_assessment  # noqa: F401
 

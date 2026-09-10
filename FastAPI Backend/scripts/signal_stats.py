@@ -100,7 +100,8 @@ def _pnl_pct(signal) -> float | None:
     exited at - take_profit for TP_HIT, the (possibly TRAILED) stop_loss for
     STOPPED. This is the honest win/loss: a STOPPED trade whose stop was
     trailed into profit is a WIN, even though its status is 'STOPPED'. Returns
-    None for statuses whose exit price the database does not store (CANCELLED).
+    None only for a legacy CANCELLED row from before exit_price was recorded
+    (2026-09-10); since then every terminal outcome carries its real level.
 
     Partial-TP aware: when TP1 fired (tp1_done), the realized move is the
     blend of the banked fraction at tp1_price and the remainder at the final
@@ -109,7 +110,12 @@ def _pnl_pct(signal) -> float | None:
     entry = signal.actual_fill_price or signal.entry_price
     if not entry:
         return None
-    if signal.status is SignalStatus.TP_HIT:
+    recorded = getattr(signal, "exit_price", None)
+    if recorded:
+        # The level the monitor recorded at the terminal transition - real for
+        # every outcome, including a CANCELLED structure-failure exit.
+        exit_price = recorded
+    elif signal.status is SignalStatus.TP_HIT:
         exit_price = signal.take_profit
     elif signal.status is SignalStatus.STOPPED:
         exit_price = signal.stop_loss  # the trailed stop at the moment it hit
@@ -383,6 +389,16 @@ async def main(since=None) -> None:
             pnl = _pnl_pct(signal)
             if pnl is None:
                 tag, pnl_str = "EARLY", "   n/a"
+            elif signal.status is SignalStatus.CANCELLED:
+                # A structure-failure exit at its RECORDED price: a real outcome,
+                # so it counts toward the true win-rate like any other.
+                total_pnl += pnl
+                if pnl > 0:
+                    real_win += 1
+                else:
+                    real_loss += 1
+                tag = "EXIT"
+                pnl_str = f"{pnl:+6.2f}%"
             else:
                 total_pnl += pnl
                 if pnl > 0:
@@ -408,11 +424,65 @@ async def main(since=None) -> None:
             f"  Sum of price-move P/L on those trades : {total_pnl:+.2f}%  "
             f"(price move, not account % - size varies per trade)"
         )
-        print("  EARLY = CANCELLED structure exit; its exit price is not stored.")
+        print("  EXIT  = structure-failure close at its RECORDED exit price (counted in win-rate).")
+        print("  EARLY = a legacy structure exit from before exit prices were recorded (n/a).")
+        await _print_management_ledger(session, since)
 
         # Real-money reconciliation from the exchange ledger (fees + funding +
         # slippage included). Degrades honestly if the exchange isn't reachable.
         await _print_exchange_truth(session, since=since)
+
+
+def _summarise_events(rows) -> dict:
+    """Fold (event_type, move_pct_at_event) pairs into per-rule counts and the
+    average favourable move when the rule fired (None when unknown). Pure."""
+    out: dict = {}
+    for event_type, move in rows:
+        slot = out.setdefault(event_type, {"n": 0, "moves": []})
+        slot["n"] += 1
+        if move is not None:
+            slot["moves"].append(move)
+    for slot in out.values():
+        m = slot.pop("moves")
+        slot["avg_move_pct"] = (sum(m) / len(m)) if m else None
+        slot["measured"] = len(m)
+    return out
+
+
+async def _print_management_ledger(session, since) -> None:
+    """Per-rule ledger from signal_events: how often each management rule
+    fired and where price stood (as a % move in the trade's favour) when it
+    did. This is the question the first clean era could not answer: is the
+    structure-failure exit saving money or throwing it away?"""
+    from app.models.signal_event import SignalEvent
+
+    stmt = (
+        select(SignalEvent.event_type, SignalEvent.price, Signal.entry_price,
+               Signal.actual_fill_price, Signal.direction)
+        .join(Signal, Signal.id == SignalEvent.signal_id)
+        .where(Signal.executed.is_(True))
+    )
+    stmt = _since_filter(stmt, since)
+    rows = (await session.execute(stmt)).all()
+    print("\n=== MANAGEMENT LEDGER (per rule, executed trades) ===")
+    if not rows:
+        print("  (no events yet - recording started 2026-09-10)")
+        return
+
+    pairs = []
+    for event_type, price, entry_price, fill, direction in rows:
+        entry = fill or entry_price
+        move = _move_pct(entry, price, direction) if (entry and price) else None
+        pairs.append((event_type, move))
+    summary = _summarise_events(pairs)
+
+    print(f"  {'rule':<26} {'fired':>5}   avg move in trade's favour when it fired")
+    for event_type, slot in sorted(summary.items(), key=lambda kv: -kv[1]["n"]):
+        avg = slot["avg_move_pct"]
+        avg_str = f"{avg:+.2f}%  (n={slot['measured']})" if avg is not None else "n/a"
+        print(f"  {event_type:<26} {slot['n']:>5}   {avg_str}")
+    print("  A structure-failure close with a NEGATIVE avg move cut losses short;")
+    print("  a POSITIVE one closed winners early. Both are visible here for the first time.")
 
 
 def _parse_since(argv) -> "datetime | None":

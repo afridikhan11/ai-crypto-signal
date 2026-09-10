@@ -163,5 +163,18 @@ class Signal(Base, TimestampMixin):
     # cancelled without guessing which order id is which.
     entry_order_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # ---- Exit record (2026-09-10) ----
+    # WHERE and WHY the trade actually ended. Until now only TP_HIT and STOPPED
+    # had a recoverable exit level (take_profit / the trailed stop_loss); a
+    # CANCELLED structure-failure exit stored nothing, so 60% of executed
+    # trades in the first clean measurement era had NO P/L at all - the single
+    # most common outcome was the one we could not see. Set once, at the
+    # moment of the terminal transition, and never overwritten.
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
     # Relationship to Coin – enables eager loading and direct access to coin symbol
     coin: Mapped["Coin"] = relationship("Coin", back_populates="signals")
+    events: Mapped[list["SignalEvent"]] = relationship(
+        "SignalEvent", back_populates="signal", cascade="all, delete-orphan"
+    )
