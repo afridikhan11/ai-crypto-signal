@@ -77,6 +77,7 @@ from sqlalchemy import func, select
 
 from app.ai.calibration_profiles import TESTNET_MIN_CONFIDENCE
 from app.assets.asset_profile import AssetProfile, get_asset_profile
+from app.core import liveness
 from app.core.constants import (
     ASSET_CLASS_COMMODITY,
     PENDING_ENTRY_EXPIRY_MINUTES,
@@ -362,6 +363,9 @@ class UniversalScanner:
         # explicitly pauses/stops from the panel. See
         # app/services/trading_settings.py for the full design note.
         if get_engine_run_state() != "running":
+            # Paused on purpose: the loop is working correctly by doing
+            # nothing, so it must still count as alive.
+            liveness.beat(liveness.SCANNER)
             return
 
         # The market-data feed streams symbol names in LOWERCASE (both the
@@ -377,6 +381,9 @@ class UniversalScanner:
 
         async with self._symbol_locks[symbol]:
             await self.analyze_symbol(symbol)
+        # Beat only after the pipeline actually completed. A wedged or
+        # raising pipeline must NOT look alive.
+        liveness.beat(liveness.SCANNER)
 
     # ------------------------------------------------------------------
     # Data assembly

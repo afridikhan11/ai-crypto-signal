@@ -113,6 +113,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core import liveness
 from app.core.config import get_settings
 from app.core.constants import PENDING_ENTRY_EXPIRY_MINUTES
 from app.core.database import AsyncSessionLocal
@@ -1451,6 +1452,11 @@ class SignalMonitor:
         while self._running:
             try:
                 await self.check_active_signals()
+                # INSIDE the try, on purpose. This loop catches everything and
+                # sleeps, so a poll that raises every cycle keeps the task
+                # alive while doing no work - exactly the shape of the
+                # 2026-09-10 outage. Only a poll that COMPLETED is a heartbeat.
+                liveness.beat(liveness.MONITOR)
             except Exception as e:
                 logger.exception(f"Signal monitor check failed: {e}")
             await asyncio.sleep(self.POLL_INTERVAL_SECONDS)

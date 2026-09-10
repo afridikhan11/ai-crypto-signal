@@ -11,6 +11,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Without this the bot stays down after a VM reboot or any crash until
+    # somebody notices and runs `docker compose up` by hand.
+    restart: unless-stopped
     healthcheck:
       # -h 127.0.0.1 forces a TCP check, and it matters. Without it
       # pg_isready uses the unix socket - which the TEMPORARY server the
@@ -35,6 +38,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -64,6 +68,22 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    restart: unless-stopped
+    # `Up` is not health. On 2026-09-10 this container ran happily for seven
+    # hours while every ORM query raised - the process was alive, the work was
+    # not. /health returns 503 when the scanner or monitor has stopped
+    # completing cycles or the ORM cannot query, so Docker restarts it instead
+    # of leaving a dead bot looking fine.
+    #
+    # start_period is generous: the scanner's first sweep of ~35 symbols has to
+    # finish before it can beat, and a restart loop during startup would be
+    # worse than the outage it guards against.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=10).status==200 else 1)\""]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 300s
 
 volumes:
   postgres_data:
