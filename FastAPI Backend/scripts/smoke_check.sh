@@ -80,10 +80,19 @@ case "$body" in
 esac
 
 echo "=== 4. The ORM can actually query ==="
-# The specific failure of 2026-09-10: a mapped SELECT, in the app's own
-# process, with the app's own imports.
-if $COMPOSE exec -T app python -c "
+# The specific failure of 2026-09-10: a mapped SELECT in the app's own
+# process, reached through the app's own import surface.
+#
+# `import app.main` on purpose, not the individual models. The first version
+# of this check imported only `app.models.signal` and failed on a HEALTHY
+# deployment with "expression 'Coin' failed to locate a name" - because
+# `Signal.coin` needs `app.models.coin` loaded too. A probe that imports
+# differently from the app tests a program nobody runs; that mismatch is the
+# entire bug class this script exists to catch, so the probe must not repeat
+# it. Importing the real entrypoint pulls in exactly what the app pulls in.
+ORM_PROBE="
 import asyncio
+import app.main  # the app's real import surface
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.signal import Signal
@@ -92,20 +101,12 @@ async def main():
     async with AsyncSessionLocal() as s:
         await s.execute(select(Signal.id).limit(1))
 asyncio.run(main())
-" >/dev/null 2>&1; then
+"
+if $COMPOSE exec -T app python -c "$ORM_PROBE" >/dev/null 2>&1; then
     pass "a mapped query succeeds"
 else
     fail "the ORM cannot query - mappers or the database are broken"
-    $COMPOSE exec -T app python -c "
-import asyncio
-from sqlalchemy import select
-from app.core.database import AsyncSessionLocal
-from app.models.signal import Signal
-async def main():
-    async with AsyncSessionLocal() as s:
-        await s.execute(select(Signal.id).limit(1))
-asyncio.run(main())
-" 2>&1 | tail -5 | sed 's/^/        /' || true
+    $COMPOSE exec -T app python -c "$ORM_PROBE" 2>&1 | tail -5 | sed 's/^/        /' || true
 fi
 
 echo

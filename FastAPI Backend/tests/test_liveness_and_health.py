@@ -125,3 +125,49 @@ class TestHealthProbesTheORMNotJustTheSocket:
         src = inspect.getsource(health.health_check)
         for key in ('"status"', '"database"', '"redis"', '"binance"'):
             assert key in src, f"{key} was part of the response before; removing it breaks consumers"
+
+
+class TestTheSmokeProbeImportsLikeTheApp:
+    """The probe's own first version failed on a HEALTHY deployment.
+
+    It imported only `app.models.signal`, so `Signal.coin` could not resolve
+    and it reported the ORM broken when it was fine. A check that imports
+    differently from the application tests a program nobody runs - which is
+    the exact mismatch it exists to catch.
+    """
+
+    def _script(self):
+        from pathlib import Path
+
+        return (Path(__file__).resolve().parent.parent / "scripts" / "smoke_check.sh").read_text()
+
+    def test_the_orm_probe_imports_the_real_entrypoint(self):
+        assert "import app.main" in self._script(), (
+            "The ORM probe must load the app's real import surface, not a "
+            "hand-picked subset of models."
+        )
+
+    def test_the_probe_is_defined_once_and_reused(self):
+        # Defined once, used for both the pass check and the failure
+        # traceback, so the two can never drift apart.
+        script = self._script()
+        assert script.count("ORM_PROBE=") == 1
+        assert script.count('python -c "$ORM_PROBE"') == 2
+
+    def test_every_service_restarts_unless_stopped(self):
+        from pathlib import Path
+
+        compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
+        assert compose.count("restart: unless-stopped") == 3, (
+            "db, redis and app must all restart. Without a restart policy a "
+            "crash or a VM reboot leaves the bot down until a human notices."
+        )
+
+    def test_the_app_healthcheck_reads_the_health_endpoint(self):
+        from pathlib import Path
+
+        compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
+        assert "/api/v1/health" in compose, (
+            "Docker must restart a container that is Up but dead; only "
+            "/health can tell the difference."
+        )
