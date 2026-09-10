@@ -175,6 +175,11 @@ class Signal(Base, TimestampMixin):
 
     # Relationship to Coin – enables eager loading and direct access to coin symbol
     coin: Mapped["Coin"] = relationship("Coin", back_populates="signals")
-    events: Mapped[list["SignalEvent"]] = relationship(
-        "SignalEvent", back_populates="signal", cascade="all, delete-orphan"
-    )
+    # NO ORM relationship to SignalEvent on purpose. Nothing on the trading
+    # path reads a signal's events; `signal_stats` joins the table explicitly.
+    # An ORM relationship would make every mapper configuration depend on
+    # `app.models.signal_event` having been imported first - which the app's
+    # runtime path does not do, and which took the whole ORM down on
+    # 2026-09-10 with "expression 'SignalEvent' failed to locate a name".
+    # Deletion is enforced by ondelete="CASCADE" on the FK, in the database,
+    # where it belongs.

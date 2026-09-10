@@ -32,6 +32,56 @@ def _load_stats_module():
 
 
 # ======================================================================
+# 0. The mappers must configure from the APP's own imports
+#
+# 2026-09-10: `Signal` was given `relationship("SignalEvent", ...)`, but
+# nothing on the application's import path loads `app.models.signal_event`
+# - only alembic/env.py and the monitor did. SQLAlchemy resolves a string
+# relationship target lazily, at mapper-configuration time, so the whole ORM
+# died on the first query with:
+#
+#     expression 'SignalEvent' failed to locate a name ('SignalEvent')
+#
+# The bot stopped monitoring, and `signal_stats` could not run. The suite
+# missed it because every test imported `signal_event` explicitly.
+#
+# The fix was to drop the relationship: nothing reads `signal.events`, the
+# stats ledger joins explicitly, and deletion is enforced by the FK's
+# ondelete=CASCADE in the database. This test locks that in.
+# ======================================================================
+class TestMappersConfigureFromAppImports:
+    def test_orm_configures_without_signal_event_imported(self):
+        import subprocess
+        import sys
+
+        # A SUBPROCESS on purpose: this module already imports SignalEvent at
+        # the top, which is exactly what hid the bug. The real question is
+        # whether a fresh interpreter loading only what the app loads can
+        # configure its mappers.
+        code = (
+            "from sqlalchemy.orm import configure_mappers\n"
+            "import app.models.coin, app.models.signal\n"
+            "configure_mappers()\n"
+            "print('ok')\n"
+        )
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        assert result.returncode == 0, (
+            "The ORM cannot configure from the application's own imports:\n"
+            f"{result.stderr[-1500:]}"
+        )
+
+    def test_signal_has_no_orm_relationship_to_its_events(self):
+        from sqlalchemy import inspect
+
+        related = {r.key for r in inspect(Signal).relationships}
+        assert "events" not in related, (
+            "An ORM relationship to SignalEvent makes every mapper "
+            "configuration depend on that module having been imported first. "
+            "Join explicitly in analysis code instead."
+        )
+
+
+# ======================================================================
 # 1. Exit record - set once, never overwritten
 # ======================================================================
 class TestRecordExit:

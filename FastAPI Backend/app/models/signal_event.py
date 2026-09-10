@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import Float, ForeignKey, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
 
@@ -36,5 +36,3 @@ class SignalEvent(Base, TimestampMixin):
     stop_before: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    signal: Mapped["Signal"] = relationship("Signal", back_populates="events")
