@@ -30,6 +30,7 @@ from app.strategy.smart_ai_runner import SmartAiRunner
 
 # Import concrete strategies so they self-register in the strategy registry.
 from app.strategy import cex_dex_divergence_strategy  # noqa: F401
+from app.strategy import engulfing_break_strategy  # noqa: F401
 from app.strategy import ict_levels_strategy  # noqa: F401
 
 
@@ -124,6 +125,22 @@ def _make_provider(data_manager, settings):
                 symbol=symbol, current_price=price, funding_rate=funding,
                 extra={"dex": dex} if dex else {},
             )
+        if strat.strategy_id == engulfing_break_strategy.STRATEGY_ID:
+            # 30m is not one of the streamed timeframes, and adding it would
+            # poll every symbol for the sake of one. Two 15m candles nest
+            # exactly inside one 30m candle, so resampling is an exact
+            # aggregation and costs no extra network call.
+            base = data_manager.get_dataframe(symbol, "15m", limit=400)
+            if base is None or base.empty:
+                return None
+            df30 = engulfing_break_strategy.resample_ohlcv(base, "30min")
+            if df30 is None or df30.empty:
+                return None
+            return MarketData(
+                symbol=symbol, dataframe=df30, funding_rate=funding,
+                current_price=float(base["close"].iloc[-1]),
+            )
+
         # ICT Levels (and any other dataframe strategy)
         df = data_manager.get_dataframe(symbol, settings.ict_ltf_timeframe)
         if df is None or df.empty:

@@ -202,6 +202,24 @@ class Settings(BaseSettings):
     # ICT Levels strategy knobs (app/strategy/ict_levels_strategy.py). All
     # tunable so the same engine can be recalibrated without code changes.
     ict_htf_timeframe: str = Field(default="4h", alias="ICT_HTF_TIMEFRAME")
+    # Engulfing Break strategy knobs (app/strategy/engulfing_break_strategy.py) -
+    # the owner's own setup, gold on 30m. Default OFF like every Smart AI
+    # strategy: a new strategy never trades until it is switched on.
+    #
+    # A GOLD PIP IS $0.10 HERE. That is a setting rather than a constant
+    # because "a pip" on gold means $0.01, $0.10 or $1.00 depending on who is
+    # speaking, and getting it wrong changes the entry zone and the stop by a
+    # factor of ten in either direction.
+    engulfing_break_enabled: bool = Field(default=False, alias="ENGULFING_BREAK_ENABLED")
+    engulfing_break_symbols: str = Field(default="XAUUSDT", alias="ENGULFING_BREAK_SYMBOLS")
+    engulfing_break_timeframe: str = Field(default="30m", alias="ENGULFING_BREAK_TIMEFRAME")
+    engulfing_break_pip_size: float = Field(default=0.10, alias="ENGULFING_BREAK_PIP_SIZE")
+    engulfing_break_entry_pips: float = Field(default=30.0, alias="ENGULFING_BREAK_ENTRY_PIPS")
+    engulfing_break_stop_pips: float = Field(default=90.0, alias="ENGULFING_BREAK_STOP_PIPS")
+    engulfing_break_rr: float = Field(default=2.0, alias="ENGULFING_BREAK_RR")
+    # How stale a break may be before it stops counting as a live setup.
+    engulfing_break_max_bars: int = Field(default=3, alias="ENGULFING_BREAK_MAX_BARS")
+
     ict_ltf_timeframe: str = Field(default="15m", alias="ICT_LTF_TIMEFRAME")
     ict_dealing_range_lookback: int = Field(default=50, alias="ICT_DEALING_RANGE_LOOKBACK")
     ict_equal_level_tolerance_pct: float = Field(
