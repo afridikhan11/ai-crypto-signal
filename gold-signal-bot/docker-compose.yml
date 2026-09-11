@@ -1,0 +1,17 @@
+# Runs on its own. Nothing here touches the trading bot's compose project -
+# no shared network, no shared volume, no database server. It can be started,
+# stopped, broken and rebuilt without the trading bot noticing.
+services:
+  signals:
+    build: .
+    # A crash or a VM reboot must not leave the bot silently down until
+    # someone notices - which on a signal bot means noticing nothing arrived.
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # The one setting the container overrides: the database belongs on the
+      # mounted volume, not inside the image, or a rebuild forgets every
+      # signal already sent and re-announces all of them.
+      DB_PATH: /data/signals.db
+    volumes:
+      - ./data:/data
