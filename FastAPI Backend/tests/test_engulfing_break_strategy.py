@@ -158,6 +158,35 @@ class TestFindEngulfingBreak:
         stale = find_engulfing_break(_long_setup_series(bars_after_break=10), max_bars_since_break=3)
         assert stale is None
 
+    def test_only_the_FIRST_candle_beyond_the_pattern_is_the_break(self):
+        """Price HOLDING above the level is not a second break.
+
+        Every candle closing beyond the pair used to re-qualify as "the
+        break", which had two consequences: the setup never aged out of
+        `max_bars_since_break`, and its reported break price moved on every
+        candle - so the same setup was emitted again and again, each time
+        looking new. `_long_setup_series` happened to use filler that closed
+        exactly AT the level rather than above it, so nothing caught this.
+        """
+        a = green(4500, 4505, 4498, 4503)
+        b = red(4506, 4507, 4496, 4497)
+        breaker = green(4498, 4510, 4497, 4508)       # first close above 4507
+        holding = [green(4508, 4512, 4507, 4511), green(4511, 4514, 4510, 4513)]
+        series = [Candle(4495, 4501, 4494, 4500), a, b, breaker, *holding,
+                  Candle(4513, 4514, 4512, 4513)]
+
+        setup = find_engulfing_break(series, max_bars_since_break=3)
+        assert setup is not None
+        assert setup.break_close == 4508          # the original break, not 4513
+        assert setup.bars_since_break == 2        # and it is ageing out
+
+    def test_a_pattern_price_has_not_broken_yet_is_not_a_setup(self):
+        a = green(4500, 4505, 4498, 4503)
+        b = red(4506, 4507, 4496, 4497)
+        series = [Candle(4495, 4501, 4494, 4500), a, b,
+                  Candle(4498, 4502, 4497, 4500), Candle(4500, 4501, 4499, 4500)]
+        assert find_engulfing_break(series) is None
+
     def test_too_few_candles_returns_none(self):
         assert find_engulfing_break([Candle(1, 2, 0.5, 1.5)]) is None
         assert find_engulfing_break([]) is None

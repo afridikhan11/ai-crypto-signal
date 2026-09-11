@@ -118,15 +118,35 @@ def is_engulfing(a: Candle, b: Candle) -> Optional[str]:
     return None
 
 
+def _first_break(closed: List[Candle], pair_idx: int, kind: str) -> Optional[int]:
+    """Index of the FIRST candle after the pair that closes beyond it.
+
+    The first, emphatically not the latest. A candle closing beyond the pair
+    is what CONFIRMS the setup; every candle after it that merely stays beyond
+    is price holding, not a second confirmation. Taking the latest such candle
+    instead meant the setup never aged out of `max_bars_since_break` and its
+    reported break price changed on every candle - so the same setup was
+    re-emitted indefinitely, each time looking new.
+    """
+    a, b = closed[pair_idx - 1], closed[pair_idx]
+    for k in range(pair_idx + 1, len(closed)):
+        close = closed[k].close
+        if kind == "bearish" and close > max(a.high, b.high):
+            return k
+        if kind == "bullish" and close < min(a.low, b.low):
+            return k
+    return None
+
+
 def find_engulfing_break(
     candles: List[Candle], max_bars_since_break: int = 3, lookback: int = 40
 ) -> Optional[EngulfingBreak]:
-    """The most RECENT engulfing break in `candles` (oldest first), or None.
+    """The most recently CONFIRMED engulfing break in `candles` (oldest first),
+    or None.
 
     A break is a candle closing beyond BOTH candles of the pair, in the
-    direction opposite to the engulfing. Only breaks within
-    `max_bars_since_break` of the latest candle are returned - an old break
-    is history, not a setup.
+    direction opposite to the engulfing, and only the FIRST such candle counts.
+    Breaks older than `max_bars_since_break` are history, not setups.
 
     The last candle is treated as still forming and is never used as the
     break: acting on an unclosed candle would fire on a close that has not
@@ -142,23 +162,32 @@ def find_engulfing_break(
     last_index = len(closed) - 1
     start = max(1, len(closed) - lookback)
 
-    # Newest first: the most recent qualifying break wins.
-    for break_idx in range(last_index, start - 1, -1):
+    best: Optional[tuple] = None          # (break_idx, pair_idx, EngulfingBreak)
+    for pair_idx in range(last_index, start - 1, -1):
+        a, b = closed[pair_idx - 1], closed[pair_idx]
+        kind = is_engulfing(a, b)
+        if kind is None:
+            continue
+
+        break_idx = _first_break(closed, pair_idx, kind)
+        if break_idx is None:
+            continue                      # the pattern is there; price has not broken it
         bars_since = last_index - break_idx
         if bars_since > max_bars_since_break:
-            break
-        breaker = closed[break_idx]
-        # The pair must sit strictly before the break candle.
-        for pair_idx in range(break_idx - 1, start - 1, -1):
-            a, b = closed[pair_idx - 1], closed[pair_idx]
-            kind = is_engulfing(a, b)
-            if kind is None:
-                continue
-            if kind == "bearish" and breaker.close > max(a.high, b.high):
-                return EngulfingBreak(Direction.LONG, a, b, breaker.close, bars_since)
-            if kind == "bullish" and breaker.close < min(a.low, b.low):
-                return EngulfingBreak(Direction.SHORT, a, b, breaker.close, bars_since)
-    return None
+            continue                      # confirmed too long ago to trade now
+
+        direction = Direction.LONG if kind == "bearish" else Direction.SHORT
+        candidate = (
+            break_idx, pair_idx,
+            EngulfingBreak(direction, a, b, closed[break_idx].close, bars_since),
+        )
+        # A wider, older pair can be broken LATER than a newer one, so the most
+        # recent break is found by comparing, not by stopping at the first pair
+        # that qualifies.
+        if best is None or candidate[:2] > best[:2]:
+            best = candidate
+
+    return best[2] if best else None
 
 
 def entry_zone(setup: EngulfingBreak, pip: float, entry_pips: float) -> tuple:
