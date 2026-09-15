@@ -385,8 +385,12 @@ async def main(since=None) -> None:
             print("  (none yet — no executed trade has reached TP/SL/cancel)")
         real_win = real_loss = 0
         total_pnl = 0.0
+        conf_rows = []
         for signal, symbol in rows:
             pnl = _pnl_pct(signal)
+            conf_rows.append((
+                signal.confidence, pnl, signal.status is SignalStatus.CANCELLED,
+            ))
             if pnl is None:
                 tag, pnl_str = "EARLY", "   n/a"
             elif signal.status is SignalStatus.CANCELLED:
@@ -426,6 +430,7 @@ async def main(since=None) -> None:
         )
         print("  EXIT  = structure-failure close at its RECORDED exit price (counted in win-rate).")
         print("  EARLY = a legacy structure exit from before exit prices were recorded (n/a).")
+        _print_confidence_buckets(conf_rows)
         await _print_management_ledger(session, since)
 
         # Real-money reconciliation from the exchange ledger (fees + funding +
@@ -433,20 +438,141 @@ async def main(since=None) -> None:
         await _print_exchange_truth(session, since=since)
 
 
+def _median(values):
+    """Middle value, or None for an empty list. Pure.
+
+    Median rather than mean for time-in-trade: one trade held overnight would
+    drag an average far away from where the rule actually spends its life.
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _minutes_between(start, end):
+    """Minutes from `start` to `end`; None when either is missing or the clock
+    runs backwards.
+
+    Tolerates a naive timestamp on either side by reading it as UTC. Mixing an
+    aware and a naive datetime raises, and a reporting script must never take
+    the whole run down over one odd row.
+    """
+    if start is None or end is None:
+        return None
+    from datetime import timezone as _tz
+
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=_tz.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=_tz.utc)
+    minutes = (end - start).total_seconds() / 60.0
+    return minutes if minutes >= 0 else None
+
+
 def _summarise_events(rows) -> dict:
-    """Fold (event_type, move_pct_at_event) pairs into per-rule counts and the
-    average favourable move when the rule fired (None when unknown). Pure."""
+    """Fold (event_type, move_pct_at_event, minutes_in_trade) triples into
+    per-rule counts, the average favourable move when the rule fired, and the
+    median time the trade had been open. Any of the two measurements may be
+    None; the rule still counts as having fired. Pure."""
     out: dict = {}
-    for event_type, move in rows:
-        slot = out.setdefault(event_type, {"n": 0, "moves": []})
+    for event_type, move, minutes in rows:
+        slot = out.setdefault(event_type, {"n": 0, "moves": [], "minutes": []})
         slot["n"] += 1
         if move is not None:
             slot["moves"].append(move)
+        if minutes is not None:
+            slot["minutes"].append(minutes)
     for slot in out.values():
         m = slot.pop("moves")
+        t = slot.pop("minutes")
         slot["avg_move_pct"] = (sum(m) / len(m)) if m else None
         slot["measured"] = len(m)
+        slot["median_minutes"] = _median(t)
+        slot["timed"] = len(t)
     return out
+
+
+# ----------------------------------------------------------------------
+# Confidence buckets
+#
+# WHY (2026-09-15): in the first five days of the clean era, 12 of 17 executed
+# decided trades ended as structure exits whose combined price move was -0.07%
+# - about nothing - while costing roughly 18 of the 22 USDT paid in fees. The
+# exit rule was not the problem (it fired at -0.15%, cutting small losers); the
+# entries were. The two clean winners came in at confidence 80 and 83 and the
+# churn at 70-79, but on a sample of two that is a hint, not a finding.
+#
+# There is no minimum-confidence floor in the pipeline today. Before adding one
+# the question has to be answered with data, and answered continuously as the
+# sample grows - which is what this section is for.
+# ----------------------------------------------------------------------
+_CONF_BUCKETS = ((80, "80+"), (75, "75-79"), (70, "70-74"), (0, "under 70"))
+_BUCKET_ORDER = ("80+", "75-79", "70-74", "under 70", "unknown")
+
+
+def _bucket_confidence(confidence) -> str:
+    """Which band a confidence falls in. Pure."""
+    if confidence is None:
+        return "unknown"
+    for floor, label in _CONF_BUCKETS:
+        if confidence >= floor:
+            return label
+    return "unknown"
+
+
+def _summarise_confidence(rows) -> dict:
+    """Fold (confidence, pnl_pct, is_structure_exit) triples into per-bucket
+    outcomes. `pnl_pct` may be None (a legacy row with no recorded exit); it
+    still counts as a trade taken, just not as a measured one. Pure."""
+    out: dict = {}
+    for confidence, pnl, structure_exit in rows:
+        slot = out.setdefault(_bucket_confidence(confidence), {
+            "n": 0, "wins": 0, "losses": 0, "measured": 0,
+            "sum_pnl_pct": 0.0, "structure_exits": 0,
+        })
+        slot["n"] += 1
+        if structure_exit:
+            slot["structure_exits"] += 1
+        if pnl is not None:
+            slot["measured"] += 1
+            slot["sum_pnl_pct"] += pnl
+            if pnl > 0:
+                slot["wins"] += 1
+            else:
+                slot["losses"] += 1
+    for slot in out.values():
+        measured = slot["measured"]
+        slot["win_rate_pct"] = (slot["wins"] / measured * 100.0) if measured else None
+        slot["avg_pnl_pct"] = (slot["sum_pnl_pct"] / measured) if measured else None
+        slot["structure_exit_pct"] = (slot["structure_exits"] / slot["n"] * 100.0) if slot["n"] else 0.0
+    return out
+
+
+def _print_confidence_buckets(rows) -> None:
+    print("\n=== BY CONFIDENCE (executed decided trades) ===")
+    summary = _summarise_confidence(rows)
+    if not summary:
+        print("  (none yet)")
+        return
+    print(f"  {'band':<10} {'n':>3}  {'win-rate':>9}  {'avg P/L':>8}  {'sum P/L':>8}   structure exits")
+    for label in _BUCKET_ORDER:
+        slot = summary.get(label)
+        if slot is None:
+            continue
+        wr = f"{slot['win_rate_pct']:.0f}%" if slot["win_rate_pct"] is not None else "n/a"
+        avg = f"{slot['avg_pnl_pct']:+.2f}%" if slot["avg_pnl_pct"] is not None else "n/a"
+        total = f"{slot['sum_pnl_pct']:+.2f}%" if slot["measured"] else "n/a"
+        print(
+            f"  {label:<10} {slot['n']:>3}  {wr:>9}  {avg:>8}  {total:>8}   "
+            f"{slot['structure_exits']}/{slot['n']} ({slot['structure_exit_pct']:.0f}%)"
+        )
+    print("  There is no minimum-confidence floor in the pipeline today. If a band")
+    print("  keeps losing money and keeps ending in structure exits, that is the")
+    print("  argument for adding one - and this is the evidence for it.")
 
 
 async def _print_management_ledger(session, since) -> None:
@@ -458,7 +584,8 @@ async def _print_management_ledger(session, since) -> None:
 
     stmt = (
         select(SignalEvent.event_type, SignalEvent.price, Signal.entry_price,
-               Signal.actual_fill_price, Signal.direction)
+               Signal.actual_fill_price, Signal.direction,
+               SignalEvent.created_at, Signal.filled_at, Signal.executed_at)
         .join(Signal, Signal.id == SignalEvent.signal_id)
         .where(Signal.executed.is_(True))
     )
@@ -469,20 +596,40 @@ async def _print_management_ledger(session, since) -> None:
         print("  (no events yet - recording started 2026-09-10)")
         return
 
-    pairs = []
-    for event_type, price, entry_price, fill, direction in rows:
+    triples = []
+    for (event_type, price, entry_price, fill, direction,
+         fired_at, filled_at, executed_at) in rows:
         entry = fill or entry_price
         move = _move_pct(entry, price, direction) if (entry and price) else None
-        pairs.append((event_type, move))
-    summary = _summarise_events(pairs)
+        # From the FILL, not from when the signal was created: time in trade is
+        # how long the position was actually open when the rule fired.
+        # `executed_at` is the fallback for rows predating `filled_at`.
+        minutes = _minutes_between(filled_at or executed_at, fired_at)
+        triples.append((event_type, move, minutes))
+    summary = _summarise_events(triples)
 
-    print(f"  {'rule':<26} {'fired':>5}   avg move in trade's favour when it fired")
+    print(f"  {'rule':<26} {'fired':>5}   {'avg move (n)':<18} median time in trade (n)")
     for event_type, slot in sorted(summary.items(), key=lambda kv: -kv[1]["n"]):
         avg = slot["avg_move_pct"]
-        avg_str = f"{avg:+.2f}%  (n={slot['measured']})" if avg is not None else "n/a"
-        print(f"  {event_type:<26} {slot['n']:>5}   {avg_str}")
+        avg_str = f"{avg:+.2f}% ({slot['measured']})" if avg is not None else "n/a"
+        med = slot["median_minutes"]
+        med_str = f"{_pretty_minutes(med)} ({slot['timed']})" if med is not None else "n/a"
+        print(f"  {event_type:<26} {slot['n']:>5}   {avg_str:<18} {med_str}")
     print("  A structure-failure close with a NEGATIVE avg move cut losses short;")
-    print("  a POSITIVE one closed winners early. Both are visible here for the first time.")
+    print("  a POSITIVE one closed winners early.")
+    print("  Median time says whether a rule gives a trade a chance: a structure")
+    print("  exit firing minutes after the fill is the bot second-guessing its own")
+    print("  entry, which is a different problem from the exit being wrong.")
+
+
+def _pretty_minutes(minutes: float) -> str:
+    """Minutes as something readable at a glance. Pure."""
+    if minutes < 90:
+        return f"{minutes:.0f} min"
+    hours = minutes / 60.0
+    if hours < 48:
+        return f"{hours:.1f} hr"
+    return f"{hours / 24.0:.1f} d"
 
 
 def _parse_since(argv) -> "datetime | None":

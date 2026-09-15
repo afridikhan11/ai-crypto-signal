@@ -18,6 +18,13 @@ from types import SimpleNamespace
 import pytest
 
 from app.models.base import Base
+# `Signal.coin` is a string relationship, so the mappers cannot configure
+# unless `Coin` has been imported. Run this file on its own without it and
+# three tests fail with "expression 'Coin' failed to locate a name" - passing
+# only when some OTHER test module happened to import it first. That is the
+# same lazy-resolution trap that took the bot down for seven hours on
+# 2026-09-10, so the file states its own dependency rather than borrowing one.
+from app.models.coin import Coin  # noqa: F401
 from app.models.signal import Direction, Signal, SignalStatus
 from app.models.signal_event import SignalEvent
 from app.scheduler.signal_monitor import SignalMonitor
@@ -174,21 +181,211 @@ class TestEventSummary:
 
     def test_counts_and_averages_per_rule(self):
         out = self.stats._summarise_events([
-            ("close_structure_failure", -0.4),
-            ("close_structure_failure", +0.2),
-            ("close_structure_failure", None),     # unknown move still counts as fired
-            ("move_to_breakeven", 1.1),
+            ("close_structure_failure", -0.4, 10.0),
+            ("close_structure_failure", +0.2, 30.0),
+            ("close_structure_failure", None, None),   # unknown move still counts as fired
+            ("move_to_breakeven", 1.1, 60.0),
         ])
         sf = out["close_structure_failure"]
         assert sf["n"] == 3
         assert sf["measured"] == 2
         assert sf["avg_move_pct"] == pytest.approx(-0.1)
-        assert out["move_to_breakeven"] == {"n": 1, "avg_move_pct": pytest.approx(1.1), "measured": 1}
+        assert out["move_to_breakeven"]["n"] == 1
+        assert out["move_to_breakeven"]["avg_move_pct"] == pytest.approx(1.1)
 
     def test_a_rule_with_no_measured_moves_reports_none(self):
-        out = self.stats._summarise_events([("reconciled", None)])
+        out = self.stats._summarise_events([("reconciled", None, None)])
         assert out["reconciled"]["avg_move_pct"] is None
+        assert out["reconciled"]["median_minutes"] is None
         assert out["reconciled"]["n"] == 1
 
     def test_empty_input(self):
         assert self.stats._summarise_events([]) == {}
+
+
+# ======================================================================
+# Time in trade (2026-09-15)
+#
+# The ledger said close_structure_failure fired at -0.15% - cutting small
+# losers, not killing winners. It could not say WHEN. A rule that fires ten
+# minutes after the fill is the bot second-guessing its own entry, which is a
+# different problem with a different fix from the exit being wrong.
+# ======================================================================
+class TestTimeInTrade:
+    def setup_method(self):
+        self.stats = _load_stats_module()
+
+    def test_median_of_an_odd_list_is_the_middle_value(self):
+        assert self.stats._median([30.0, 10.0, 20.0]) == 20.0
+
+    def test_median_of_an_even_list_averages_the_middle_pair(self):
+        assert self.stats._median([10.0, 20.0, 30.0, 40.0]) == 25.0
+
+    def test_median_of_nothing_is_none(self):
+        assert self.stats._median([]) is None
+
+    def test_median_not_mean_so_one_overnight_hold_cannot_distort_it(self):
+        """The reason for a median. Four quick exits and one trade held for a
+        day: the mean says five hours, the median says fifteen minutes, and
+        only one of those describes where the rule lives."""
+        values = [10.0, 15.0, 15.0, 20.0, 1440.0]
+        assert self.stats._median(values) == 15.0
+        assert sum(values) / len(values) > 290.0
+
+    def test_minutes_between_two_aware_timestamps(self):
+        from datetime import datetime, timedelta, timezone
+
+        start = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
+        assert self.stats._minutes_between(start, start + timedelta(minutes=45)) == 45.0
+
+    def test_a_naive_timestamp_is_read_as_utc_rather_than_raising(self):
+        """`filled_at` can be written naive while `created_at` comes back aware.
+        Subtracting the two raises, and a reporting script must not go down
+        over one odd row."""
+        from datetime import datetime, timezone
+
+        naive = datetime(2026, 9, 15, 12, 0)
+        aware = datetime(2026, 9, 15, 12, 30, tzinfo=timezone.utc)
+        assert self.stats._minutes_between(naive, aware) == 30.0
+        assert self.stats._minutes_between(aware, naive.replace(hour=13)) == 30.0
+
+    def test_a_missing_timestamp_is_unknown_not_zero(self):
+        from datetime import datetime, timezone
+
+        when = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
+        assert self.stats._minutes_between(None, when) is None
+        assert self.stats._minutes_between(when, None) is None
+
+    def test_a_backwards_clock_is_unknown_not_negative(self):
+        from datetime import datetime, timedelta, timezone
+
+        start = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
+        assert self.stats._minutes_between(start, start - timedelta(minutes=5)) is None
+
+    def test_the_ledger_reports_a_median_per_rule(self):
+        out = self.stats._summarise_events([
+            ("close_structure_failure", -0.4, 10.0),
+            ("close_structure_failure", -0.1, 20.0),
+            ("close_structure_failure", -0.2, 30.0),
+            ("trail_stop", +1.4, 240.0),
+        ])
+        assert out["close_structure_failure"]["median_minutes"] == 20.0
+        assert out["close_structure_failure"]["timed"] == 3
+        assert out["trail_stop"]["median_minutes"] == 240.0
+
+    def test_a_rule_can_be_measured_for_move_but_not_for_time(self):
+        out = self.stats._summarise_events([("stopped", -1.0, None)])
+        assert out["stopped"]["measured"] == 1
+        assert out["stopped"]["timed"] == 0
+        assert out["stopped"]["median_minutes"] is None
+
+
+class TestPrettyMinutes:
+    def setup_method(self):
+        self.stats = _load_stats_module()
+
+    def test_short_holds_read_in_minutes(self):
+        assert self.stats._pretty_minutes(23.0) == "23 min"
+
+    def test_longer_holds_read_in_hours(self):
+        assert self.stats._pretty_minutes(150.0) == "2.5 hr"
+
+    def test_multi_day_holds_read_in_days(self):
+        assert self.stats._pretty_minutes(4320.0) == "3.0 d"
+
+
+# ======================================================================
+# Confidence buckets (2026-09-15)
+#
+# 12 of the first 17 executed decided trades ended as structure exits worth
+# -0.07% between them, while burning ~18 of the 22 USDT paid in fees. The exit
+# rule was behaving; the entries were not. The two clean winners came in at
+# confidence 80 and 83, the churn at 70-79 - a hint on a sample of two, and
+# the pipeline has no minimum-confidence floor to compare against.
+# ======================================================================
+class TestConfidenceBuckets:
+    def setup_method(self):
+        self.stats = _load_stats_module()
+
+    def test_each_band_catches_its_own_range(self):
+        assert self.stats._bucket_confidence(83) == "80+"
+        assert self.stats._bucket_confidence(80) == "80+"
+        assert self.stats._bucket_confidence(79) == "75-79"
+        assert self.stats._bucket_confidence(75) == "75-79"
+        assert self.stats._bucket_confidence(74) == "70-74"
+        assert self.stats._bucket_confidence(70) == "70-74"
+        assert self.stats._bucket_confidence(69) == "under 70"
+
+    def test_a_missing_confidence_is_its_own_band_not_a_zero(self):
+        assert self.stats._bucket_confidence(None) == "unknown"
+
+    def test_wins_and_losses_are_counted_by_P_L_not_by_status(self):
+        out = self.stats._summarise_confidence([
+            (83, +1.76, False),
+            (80, +2.54, False),
+            (77, -1.00, True),
+            (72, +0.09, True),
+        ])
+        assert out["80+"]["n"] == 2
+        assert out["80+"]["wins"] == 2
+        assert out["80+"]["win_rate_pct"] == pytest.approx(100.0)
+        assert out["80+"]["sum_pnl_pct"] == pytest.approx(4.30)
+        assert out["75-79"]["losses"] == 1
+        assert out["70-74"]["wins"] == 1
+
+    def test_a_flat_exit_counts_as_a_loss_because_fees_are_real(self):
+        """+0.00% of price move is not a win: the round trip still paid two
+        commissions. Counting it as a win would flatter exactly the churn this
+        section exists to find."""
+        out = self.stats._summarise_confidence([(72, 0.0, True)])
+        assert out["70-74"]["wins"] == 0
+        assert out["70-74"]["losses"] == 1
+
+    def test_structure_exits_are_tracked_per_band(self):
+        """The churn measure: which confidence band keeps producing trades that
+        the structure rule has to close."""
+        out = self.stats._summarise_confidence([
+            (77, -1.00, True),
+            (77, +0.68, True),
+            (76, +0.95, False),
+        ])
+        assert out["75-79"]["structure_exits"] == 2
+        assert out["75-79"]["structure_exit_pct"] == pytest.approx(66.67, abs=0.01)
+
+    def test_an_unmeasured_trade_still_counts_as_taken(self):
+        """A legacy row with no recorded exit was still a trade that paid fees.
+        It counts in `n`, but must not be averaged into the P/L."""
+        out = self.stats._summarise_confidence([(77, None, True), (77, +1.0, False)])
+        assert out["75-79"]["n"] == 2
+        assert out["75-79"]["measured"] == 1
+        assert out["75-79"]["avg_pnl_pct"] == pytest.approx(1.0)
+
+    def test_a_band_with_nothing_measured_reports_none_not_zero(self):
+        out = self.stats._summarise_confidence([(72, None, True)])
+        assert out["70-74"]["win_rate_pct"] is None
+        assert out["70-74"]["avg_pnl_pct"] is None
+        assert out["70-74"]["n"] == 1
+
+    def test_empty_input(self):
+        assert self.stats._summarise_confidence([]) == {}
+
+    def test_the_five_day_sample_reproduces_what_was_observed(self):
+        """The real numbers from 2026-09-10..15, so the section is known to say
+        what the era actually did rather than merely running."""
+        observed = [
+            (72, 0.00, False), (77, +0.72, True), (76, +0.95, False),
+            (74, +0.06, True), (77, -1.15, False), (70, +0.32, True),
+            (77, -0.35, True), (72, -0.18, True), (83, +1.76, False),
+            (77, -1.00, True), (72, +0.09, True), (74, +0.03, True),
+            (77, -0.47, True), (75, +0.68, True), (72, 0.00, True),
+            (79, +0.03, True), (80, +2.54, False),
+        ]
+        out = self.stats._summarise_confidence(observed)
+        # The whole hint, in one assertion: the 80+ band produced both clean
+        # winners and not one structure exit.
+        assert out["80+"]["n"] == 2
+        assert out["80+"]["structure_exits"] == 0
+        assert out["80+"]["win_rate_pct"] == pytest.approx(100.0)
+        # ...and the churn sits in 70-79.
+        churn = out["70-74"]["structure_exits"] + out["75-79"]["structure_exits"]
+        assert churn == 12
