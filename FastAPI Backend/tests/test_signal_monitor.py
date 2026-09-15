@@ -61,6 +61,11 @@ class _FakeSignal:
         self.confidence = 90
         self.executed = executed
         self.executed_environment = executed_environment
+        # Management measures structure from the FILL, not from the signal -
+        # see TestManagementCutoffIsTheFill. Defaulting both to creation keeps
+        # every pre-existing test at its old behaviour.
+        self.filled_at = created_at
+        self.executed_at = created_at
 
 
 class _FakeDataManager:
@@ -134,6 +139,105 @@ class TestBreaksAfterFilter:
 
     def test_empty_input_yields_nothing(self, monitor):
         assert monitor._breaks_after([], CREATED_AT) == []
+
+
+class TestManagementCutoffIsTheFill:
+    """Structure is measured from when the POSITION opened, not from when the
+    signal was written.
+
+    THE BUG THIS FIXES (2026-09-15)
+    ------------------------------------------------------------------------
+    The management ledger showed `close_structure_failure` firing a median of
+    four seconds after the fill - ten of seventeen executed trades, fastest
+    two seconds - for a combined price move of about nothing and roughly 15
+    USDT in fees. They were opened and closed before a single new candle
+    existed.
+
+    A pending limit entry is created when the setup appears and fills only
+    when price comes back to the zone, which can be hours later. Anchored to
+    `created_at`, every break in that waiting period counted as "fresh", so
+    the first poll after the fill found an opposing break from BEFORE the
+    entry and closed the trade on the spot. A break that predates the entry
+    cannot invalidate it - there was no position for it to invalidate.
+    """
+
+    def test_the_fill_wins_over_the_signals_creation(self, monitor):
+        from datetime import datetime, timedelta, timezone
+
+        created = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        signal = _FakeSignal()
+        signal.created_at = created
+        signal.filled_at = created + timedelta(hours=4)
+        signal.executed_at = created + timedelta(minutes=1)
+        assert monitor._management_cutoff(signal) == created + timedelta(hours=4)
+
+    def test_executed_at_covers_rows_written_before_filled_at_existed(self, monitor):
+        from datetime import datetime, timedelta, timezone
+
+        created = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        signal = _FakeSignal()
+        signal.created_at = created
+        signal.filled_at = None
+        signal.executed_at = created + timedelta(minutes=30)
+        assert monitor._management_cutoff(signal) == created + timedelta(minutes=30)
+
+    def test_creation_remains_the_floor_for_a_signal_that_never_filled(self, monitor):
+        from datetime import datetime, timezone
+
+        created = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        signal = _FakeSignal()
+        signal.created_at = created
+        signal.filled_at = None
+        signal.executed_at = None
+        assert monitor._management_cutoff(signal) == created
+
+    def test_a_break_from_the_waiting_period_no_longer_closes_the_trade(self, monitor):
+        """The exact shape of the bug: signal at 12:00, opposing break at
+        14:00 while it sat pending, fill at 16:00. Under the old cutoff that
+        14:00 break read as fresh and shut the trade within seconds."""
+        from datetime import datetime, timezone
+
+        created = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        signal = _FakeSignal()
+        signal.created_at = created
+        signal.filled_at = datetime(2026, 1, 5, 16, 0, tzinfo=timezone.utc)
+        signal.executed_at = None
+
+        while_pending = _break("bearish", 99.0, pd.Timestamp("2026-01-05 14:00:00"))
+        assert monitor._breaks_after([while_pending], created) == [while_pending]
+        assert monitor._breaks_after([while_pending], monitor._management_cutoff(signal)) == []
+
+    def test_a_break_after_the_fill_still_closes_the_trade(self, monitor):
+        """The rule must keep working - this narrows what counts, it does not
+        switch the protection off."""
+        from datetime import datetime, timezone
+
+        signal = _FakeSignal()
+        signal.created_at = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        signal.filled_at = datetime(2026, 1, 5, 16, 0, tzinfo=timezone.utc)
+        signal.executed_at = None
+
+        after_entry = _break("bearish", 99.0, pd.Timestamp("2026-01-05 17:00:00"))
+        assert monitor._breaks_after([after_entry], monitor._management_cutoff(signal)) == [after_entry]
+
+    def test_the_cutoff_can_only_move_later_never_earlier(self, monitor):
+        """The safety argument for shipping this mid-measurement: a fill is
+        never earlier than its signal, so the filter only ever gets stricter.
+        It can remove a spurious exit; it cannot create one."""
+        from datetime import datetime, timedelta, timezone
+
+        created = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
+        for filled, executed in (
+            (None, None),
+            (None, created),
+            (created, None),
+            (created + timedelta(hours=9), created + timedelta(minutes=2)),
+        ):
+            signal = _FakeSignal()
+            signal.created_at = created
+            signal.filled_at = filled
+            signal.executed_at = executed
+            assert monitor._management_cutoff(signal) >= created
 
 
 class TestStopImprovementInvariant:

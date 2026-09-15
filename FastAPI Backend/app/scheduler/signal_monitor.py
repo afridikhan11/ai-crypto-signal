@@ -479,21 +479,49 @@ class SignalMonitor:
     # Trade management helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _breaks_after(structure_breaks: List, created_at: Optional[datetime]) -> List:
-        """Only structure breaks strictly newer than the signal itself.
+    def _breaks_after(structure_breaks: List, cutoff_at: Optional[datetime]) -> List:
+        """Only structure breaks strictly newer than `cutoff_at`.
 
         Safety invariant 3 (see module docstring): without this filter the
         break that CREATED the signal would immediately read as a structure
         event against it. Timestamps on the dataframe are tz-naive UTC (the
-        convention documented in app/smc/session_engine.py); `created_at`
+        convention documented in app/smc/session_engine.py); `cutoff_at`
         is tz-aware, so it is normalized to tz-naive UTC before comparing.
         """
-        if not structure_breaks or created_at is None:
+        if not structure_breaks or cutoff_at is None:
             return []
-        cutoff = pd.Timestamp(created_at)
+        cutoff = pd.Timestamp(cutoff_at)
         if cutoff.tzinfo is not None:
             cutoff = cutoff.tz_convert("UTC").tz_localize(None)
         return [b for b in structure_breaks if pd.Timestamp(b.timestamp) > cutoff]
+
+    @staticmethod
+    def _management_cutoff(signal: Signal) -> Optional[datetime]:
+        """The moment the trade actually began - what structure is measured against.
+
+        WHY THIS IS THE FILL AND NOT THE SIGNAL (2026-09-15)
+        ------------------------------------------------------------------
+        The management ledger showed `close_structure_failure` firing a median
+        of FOUR SECONDS after the fill, ten times out of seventeen executed
+        trades - fastest two seconds. Those trades were opened and closed
+        before a single new candle existed, for a combined price move of about
+        nothing and roughly 15 USDT in fees.
+
+        The cause was this cutoff. A pending limit entry is created when the
+        setup appears and fills only when price returns to the zone, which can
+        be hours later. Every structure break in between passed a filter
+        anchored to `created_at` - so the first poll after the fill found an
+        opposing break that had happened BEFORE the trade was entered, and
+        closed it instantly. A break that predates the entry cannot invalidate
+        it: there was no position for it to invalidate.
+
+        `filled_at` is when the position actually opened. `executed_at` covers
+        rows written before `filled_at` existed, and `created_at` remains the
+        floor for a signal that never filled. A fill is never earlier than its
+        signal, so this cutoff can only ever move LATER - it can remove a
+        spurious exit, never introduce one.
+        """
+        return signal.filled_at or signal.executed_at or signal.created_at
 
     # ------------------------------------------------------------------
     # Exit record + management ledger (2026-09-10)
@@ -550,7 +578,7 @@ class SignalMonitor:
             return []
 
         snapshot = MarketStructureEngine(df, external_pivot_window=5).analyze()
-        fresh_breaks = self._breaks_after(snapshot.external_breaks, signal.created_at)
+        fresh_breaks = self._breaks_after(snapshot.external_breaks, self._management_cutoff(signal))
         session_ctx = self.session_engine.latest_context(df)
 
         return self.trade_manager.evaluate(
