@@ -49,6 +49,41 @@ class TestBeats:
         assert status["healthy"] is False
         assert "last ran" in status["detail"]
 
+    def test_the_startup_grace_is_the_components_own_cycle(self, monkeypatch):
+        """A flat grace was wrong, and a healthy deployment paid for it.
+
+        The scanner beats on CLOSED 15m candles, so after a restart it has
+        nothing to report for up to fifteen minutes. With a flat two-minute
+        grace /health returned 503 "never ran" for thirteen of them - on a
+        deployment where every container was healthy and the monitor was
+        polling normally. A check that cries wolf after every restart is a
+        check nobody reads, which is the one outcome this module exists to
+        prevent.
+
+        A loop cannot be called late until one full cycle of its own has had
+        time to pass, so the grace defaults to that component's own limit.
+        """
+        real_time = liveness.time.time
+        start = liveness._started_at
+
+        # Six minutes in - past any flat two-minute grace, well inside the
+        # scanner's own 15-minute cycle. This is the exact state observed.
+        monkeypatch.setattr(liveness.time, "time", lambda: start + 362.0)
+        assert liveness.component_status(liveness.SCANNER)["healthy"] is True
+        assert liveness.component_status(liveness.SCANNER)["detail"] == "not started yet"
+        # The monitor's cycle is five minutes, so by now it IS late.
+        assert liveness.component_status(liveness.MONITOR)["healthy"] is False
+
+        # Past its own cycle, a silent scanner is a real failure again.
+        monkeypatch.setattr(liveness.time, "time", lambda: start + 901.0)
+        assert liveness.component_status(liveness.SCANNER)["healthy"] is False
+        assert liveness.component_status(liveness.SCANNER)["detail"] == "never ran"
+        monkeypatch.setattr(liveness.time, "time", real_time)
+
+    def test_an_explicit_grace_still_wins(self):
+        assert liveness.component_status(liveness.SCANNER, grace_seconds=0.0)["healthy"] is False
+        assert liveness.component_status(liveness.SCANNER, grace_seconds=1e9)["healthy"] is True
+
     def test_components_are_independent(self):
         liveness.beat(liveness.SCANNER)
         assert liveness.component_status(liveness.SCANNER)["healthy"] is True

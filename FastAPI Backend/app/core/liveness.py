@@ -73,16 +73,27 @@ def reset() -> None:
     _beats.clear()
 
 
-def component_status(component: str, grace_seconds: float = 120.0) -> dict:
+def component_status(component: str, grace_seconds: Optional[float] = None) -> dict:
     """One component's health.
 
     `grace_seconds` covers startup: a loop that has never beaten is only a
     failure once the process has been up long enough that it should have.
     Without this every restart would report unhealthy for its first cycle
     and teach everyone to ignore the check.
+
+    THE GRACE IS PER-COMPONENT (2026-09-15). It defaults to that component's
+    own staleness limit, because a loop cannot be called late until one full
+    cycle of its own has had time to pass. A flat two minutes was wrong for
+    the scanner: it beats on CLOSED 15m candles, so after a restart it has
+    nothing to report for up to fifteen minutes - and reported "never ran",
+    503, on a perfectly healthy deployment for thirteen of them. A check that
+    cries wolf after every restart is a check nobody reads, which is the one
+    outcome this module exists to prevent.
     """
     age = last_beat(component)
     limit = STALE_AFTER_SECONDS.get(component, 300.0)
+    if grace_seconds is None:
+        grace_seconds = limit
     if age is None:
         healthy = uptime_seconds() < grace_seconds
         detail = "not started yet" if healthy else "never ran"
