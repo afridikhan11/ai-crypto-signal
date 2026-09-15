@@ -493,6 +493,11 @@ def _summarise_events(rows) -> dict:
         slot["measured"] = len(m)
         slot["median_minutes"] = _median(t)
         slot["timed"] = len(t)
+        # The spread, not just the middle: a median of zero could be ten trades
+        # closed instantly, or five instant and five that ran for an hour. Those
+        # are different findings with different fixes.
+        slot["min_minutes"] = min(t) if t else None
+        slot["max_minutes"] = max(t) if t else None
     return out
 
 
@@ -608,13 +613,20 @@ async def _print_management_ledger(session, since) -> None:
         triples.append((event_type, move, minutes))
     summary = _summarise_events(triples)
 
-    print(f"  {'rule':<26} {'fired':>5}   {'avg move (n)':<18} median time in trade (n)")
+    print(
+        f"  {'rule':<26} {'fired':>5}   {'avg move (n)':<18} "
+        f"{'median time (n)':<18} fastest -> slowest"
+    )
     for event_type, slot in sorted(summary.items(), key=lambda kv: -kv[1]["n"]):
         avg = slot["avg_move_pct"]
         avg_str = f"{avg:+.2f}% ({slot['measured']})" if avg is not None else "n/a"
         med = slot["median_minutes"]
         med_str = f"{_pretty_minutes(med)} ({slot['timed']})" if med is not None else "n/a"
-        print(f"  {event_type:<26} {slot['n']:>5}   {avg_str:<18} {med_str}")
+        if slot["min_minutes"] is None:
+            span = ""
+        else:
+            span = f"{_pretty_minutes(slot['min_minutes'])} -> {_pretty_minutes(slot['max_minutes'])}"
+        print(f"  {event_type:<26} {slot['n']:>5}   {avg_str:<18} {med_str:<18} {span}")
     print("  A structure-failure close with a NEGATIVE avg move cut losses short;")
     print("  a POSITIVE one closed winners early.")
     print("  Median time says whether a rule gives a trade a chance: a structure")
@@ -623,7 +635,16 @@ async def _print_management_ledger(session, since) -> None:
 
 
 def _pretty_minutes(minutes: float) -> str:
-    """Minutes as something readable at a glance. Pure."""
+    """Minutes as something readable at a glance. Pure.
+
+    Seconds below two minutes, because the first run of this column printed
+    "0 min" for all ten structure exits and 0 could have meant five seconds or
+    twenty-nine. At that end of the scale the exact number IS the finding: a
+    rule firing five seconds after the fill is a different bug from one firing
+    half a minute later.
+    """
+    if minutes < 2:
+        return f"{minutes * 60:.0f} sec"
     if minutes < 90:
         return f"{minutes:.0f} min"
     hours = minutes / 60.0

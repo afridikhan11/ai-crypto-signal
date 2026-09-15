@@ -278,11 +278,35 @@ class TestTimeInTrade:
         assert out["stopped"]["measured"] == 1
         assert out["stopped"]["timed"] == 0
         assert out["stopped"]["median_minutes"] is None
+        assert out["stopped"]["min_minutes"] is None
+        assert out["stopped"]["max_minutes"] is None
+
+    def test_the_spread_is_reported_beside_the_median(self):
+        """A median of zero could be ten trades closed instantly, or five
+        instant and five that ran an hour. Those are different findings with
+        different fixes, and the median alone cannot tell them apart."""
+        out = self.stats._summarise_events([
+            ("close_structure_failure", -0.4, 0.1),
+            ("close_structure_failure", -0.1, 0.2),
+            ("close_structure_failure", -0.2, 62.0),
+        ])
+        sf = out["close_structure_failure"]
+        assert sf["median_minutes"] == 0.2
+        assert sf["min_minutes"] == 0.1
+        assert sf["max_minutes"] == 62.0
 
 
 class TestPrettyMinutes:
     def setup_method(self):
         self.stats = _load_stats_module()
+
+    def test_sub_minute_holds_read_in_seconds(self):
+        """The first run printed "0 min" for all ten structure exits, and 0
+        could have meant five seconds or twenty-nine. At that end of the scale
+        the exact number IS the finding."""
+        assert self.stats._pretty_minutes(0.0) == "0 sec"
+        assert self.stats._pretty_minutes(0.15) == "9 sec"
+        assert self.stats._pretty_minutes(1.5) == "90 sec"
 
     def test_short_holds_read_in_minutes(self):
         assert self.stats._pretty_minutes(23.0) == "23 min"
