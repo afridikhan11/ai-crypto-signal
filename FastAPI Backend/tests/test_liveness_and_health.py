@@ -154,6 +154,21 @@ class TestTheSmokeProbeImportsLikeTheApp:
         assert script.count("ORM_PROBE=") == 1
         assert script.count('python -c "$ORM_PROBE"') == 2
 
+    def test_the_health_poll_reports_progress_while_it_waits(self):
+        """It polls for up to three minutes. The first version printed nothing
+        at all until the deadline, so a run that was merely WAITING looked
+        exactly like one that had hung - and the person watching reached for
+        Ctrl+C. That is the same mistake this script exists to catch, made by
+        the script itself."""
+        script = self._script()
+        assert 'note "attempt' in script, (
+            "The /health wait must say what it is doing on every attempt."
+        )
+        assert "${WAIT_SECONDS}s" in script, (
+            "Each line must show elapsed against the budget, so the watcher "
+            "knows how much longer it is worth waiting."
+        )
+
     def test_every_service_restarts_unless_stopped(self):
         from pathlib import Path
 

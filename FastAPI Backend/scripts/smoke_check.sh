@@ -53,9 +53,16 @@ fi
 echo "=== 3. The app answers /health ==="
 # Polled, not asked once: the scanner's first sweep takes a while, and a
 # check that fails during normal startup is a check people learn to ignore.
+# Say what it is doing on every attempt. The first version printed nothing at
+# all until the deadline, so a run that was merely WAITING looked identical to
+# one that had hung - and the person watching reached for Ctrl+C. That is the
+# same mistake this whole script exists to catch, made by the script itself.
 deadline=$(( $(date +%s) + WAIT_SECONDS ))
+started=$(date +%s)
 body=""
+attempt=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
+    attempt=$(( attempt + 1 ))
     body=$($COMPOSE exec -T app python -c "
 import json, urllib.request
 try:
@@ -69,6 +76,14 @@ except Exception as e:
     case "$body" in
         *'"code": 200'*) break ;;
     esac
+    elapsed=$(( $(date +%s) - started ))
+    # What came back, trimmed - a repeated 503 names the failing component,
+    # which is most of the diagnosis before the run has even finished.
+    case "$body" in
+        "") detail="no response" ;;
+        *)  detail=$(printf '%s' "$body" | cut -c1-110) ;;
+    esac
+    note "attempt ${attempt} (${elapsed}s/${WAIT_SECONDS}s): ${detail}"
     sleep 10
 done
 
