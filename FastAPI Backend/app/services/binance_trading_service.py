@@ -69,6 +69,7 @@ import asyncio
 import hashlib
 import hmac
 import math
+from decimal import Decimal, ROUND_FLOOR
 import os
 import time
 from collections import namedtuple
@@ -610,11 +611,32 @@ class BinanceTradingService:
 
     @staticmethod
     def _round_to_step(value: float, step: float) -> float:
+        """Largest multiple of `step` not exceeding `value`.
+
+        DECIMAL, NOT FLOAT (2026-09-30). `value / step` in binary floating
+        point lands a hair BELOW the integer for a fifth of all exact
+        multiples - 0.3 / 0.1 is 2.9999999999999996 - so a plain floor dropped
+        a whole step and returned 0.2.
+
+        On an order that merely under-sizes by one lot. On a CLOSE it leaves a
+        speck of position behind, and a speck is still a position: two were
+        found resting on the venue, 0.1 ARB and 0.1 FIL, each exactly one
+        step, orphaned from signals the bot had long since finished with and
+        each consuming a slot against MAX_OPEN_POSITIONS with nothing in the
+        system to say so.
+
+        A tolerance was tried first and was wrong: loose enough to rescue
+        0.3/0.1, it also snapped 2359.392999944307 UP to 2359.393, returning
+        MORE than the caller asked to close. Decimal has no tolerance to tune.
+        `str(float)` is the shortest representation that round-trips, so
+        Decimal(str(0.3)) is exactly 0.3 and the division is exact.
+        """
         if step <= 0:
             return value
-        precision = max(0, round(-math.log10(step)))
-        rounded = math.floor(value / step) * step
-        return round(rounded, precision)
+        d_value = Decimal(str(value))
+        d_step = Decimal(str(step))
+        lots = (d_value / d_step).to_integral_value(rounding=ROUND_FLOOR)
+        return float(lots * d_step)
 
     @staticmethod
     def _round_price(value: float, tick: float) -> float:
