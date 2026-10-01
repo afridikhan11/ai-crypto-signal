@@ -83,13 +83,23 @@ async def main() -> None:
     if not live:
         print("  (no open positions)")
     dust = []
+    unrealised = 0.0
     for p in sorted(live, key=lambda x: x.symbol):
         notional = abs(p.position_amt) * (p.mark_price or p.entry_price or 0.0)
         tag = ""
         if notional < DUST_NOTIONAL_USDT:
             tag = "  <-- DUST"
             dust.append((p.symbol, p.position_amt, notional))
-        print(f"  {p.symbol:<12} amt {p.position_amt:<14} notional ${notional:,.2f}{tag}")
+        # Where each open position stands RIGHT NOW. signal_stats only ever
+        # reports trades that have already closed, so without this the
+        # commonest question of all - "is anything bleeding at this moment?"
+        # - has no answer anywhere in the system.
+        unrealised += p.unrealized_pnl
+        print(f"  {p.symbol:<12} amt {p.position_amt:<14} notional ${notional:>10,.2f}"
+              f"   unrealised {p.unrealized_pnl:+8.2f} USDT{tag}")
+    if live:
+        print(f"  {'':<12} {'':<18} {'TOTAL OPEN':>11}   "
+              f"           {unrealised:+8.2f} USDT")
 
     # --- the gap, which is the whole point -------------------------------
     venue = {p.symbol.upper() for p in live}
